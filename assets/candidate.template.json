@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "candidate_id": "",
+  "decision_history": [],
+  "target": {
+    "program": "",
+    "asset": "",
+    "repository": "",
+    "commit": "",
+    "scope_evidence": "",
+    "scope_checked_at": ""
+  },
+  "model": {
+    "principals": [],
+    "protected_assets": [],
+    "trust_boundaries": [],
+    "state_stores": [],
+    "security_invariant": "",
+    "enforcement_points": []
+  },
+  "trace": {
+    "entrypoint": "",
+    "attacker_input": "",
+    "validation_path": "",
+    "authorization_path": "",
+    "state_transition": "",
+    "persistence_path": "",
+    "observable_effect": "",
+    "sibling_paths": []
+  },
+  "threat_model": {
+    "attacker_starting_access": "",
+    "attacker_controls": "",
+    "victim_action": "",
+    "capability_before": "",
+    "capability_after": "",
+    "asset_owned_boundary": "",
+    "strongest_refutation": "",
+    "refutation_result": "unresolved"
+  },
+  "proof": {
+    "type": "none",
+    "artifact": "",
+    "command": "",
+    "observed_result": "",
+    "negative_controls": [],
+    "production_relevance": ""
+  },
+  "route": {
+    "owning_project": "",
+    "owner_evidence": "",
+    "submission_target": "",
+    "type": "none",
+    "owner_verified": false,
+    "proof_type_accepted": false,
+    "proof_acceptance_evidence": "",
+    "scope_verified": false
+  },
+  "novelty": {
+    "root_cause_fingerprint": "",
+    "checked_at": "",
+    "own_reports": [],
+    "program_reports": [],
+    "upstream_history": [],
+    "recent_advisories": [],
+    "semantic_delta": "",
+    "private_duplicate_risk": "unknown"
+  },
+  "decision": {
+    "verdict": "HOLD",
+    "failed_gates": [],
+    "missing_evidence": [
+      "Complete target verification, security model, and proof."
+    ],
+    "reason": "Candidate is not yet validated.",
+    "decided_at": ""
+  }
+}
