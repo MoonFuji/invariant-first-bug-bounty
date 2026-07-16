@@ -1,0 +1,4 @@
+interface:
+  display_name: "Invariant-First Bug Bounty"
+  short_description: "Evidence-gated source and bug-bounty research"
+  default_prompt: "Use $invariant-first-bug-bounty to audit this in-scope target by modeling one security invariant and validating any candidate before reporting."
