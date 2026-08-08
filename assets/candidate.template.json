@@ -1,8 +1,9 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "candidate_id": "",
   "decision_history": [],
   "target": {
+    "operating_mode": "SOURCE_ONLY",
     "program": "",
     "asset": "",
     "repository": "",
