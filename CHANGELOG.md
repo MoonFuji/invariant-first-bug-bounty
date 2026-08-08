@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.2 — regression fixtures
+
+No validator behavior change. Pins the `target_does_not_own_security_property`
+routing (confirmed terminal refutation lands `KILL @ ownership` or
+`ROUTE_ELSEWHERE @ route`, never `REPORTABLE`) as three acceptance cases in
+`scripts/test_validate_candidate.py` (H, I, J), so a future edit that regresses
+the routing fails the suite. `scripts/validate-candidate.py` is byte-identical
+to v0.3.1.
+
 ## v0.3.1 — candidate schema 4
 
 Driven by two live failures where the schema stored a verdict but not the
