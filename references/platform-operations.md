@@ -1,6 +1,6 @@
 # Platform Operations — submission mechanics, caps, payout rails, safe-harbor
 
-The technical references cover *finding* bugs. This file covers *getting paid for them without burning yourself* — the operational realities of each platform that, when ignored, cost time, Signal, or a payout. Read the section for the platform you're submitting to. These are hard-won; treat them as load-bearing.
+The technical references cover vulnerability research. This file covers submission and platform operations: scope, eligibility, reputation, disclosure, and payout constraints that can determine whether a technically valid result is accepted. Read only the section for the destination you are using.
 
 ## Contents
 1. HackerOne

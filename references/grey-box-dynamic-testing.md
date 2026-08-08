@@ -1,26 +1,28 @@
-# Grey-box dynamic testing — running-instance discipline (read ONLY when you have a live instance)
+# Grey-box dynamic testing — controlled running-instance validation
 
-Read this for the **grey-box default** — any target you can stand up yourself (vulhub/docker, a self-hosted OSS deploy, or an instance you provisioned on a managed program and **proved you own**). This is the lane to grow into: white-box-only is an easy habit, not an obligation, and it's where reports die as "theoretical." The *narrower fallback* is a genuinely **non-runnable asset** — a library/CLI/SDK with no instance to stand up, or the upstream-CVE→IBB rail — where you can't run the dynamic tests below and instead prove the claim from the code (methodology §4.1 + the evidence-grounding rule in §4.5). For anything runnable, don't settle for source-only: stand it up and prove it live.
+Read this when the selected proof level includes a running instance. In `SOURCE_ONLY`, use an isolated local process, disposable container, or self-hosted deployment you control. In `PROGRAM_HOSTED`, use only an owned instance or account explicitly covered by current program rules. A genuinely non-runnable library, CLI, SDK, or parser may instead require an executable test or exact source-level enforcement model accepted by the destination.
 
-**Safe-harbor first (non-negotiable):** stay inside the program's stated scope — test a **self-provisioned/self-hosted instance** OR **your own account & data on the program's hosted in-scope app**; never another tenant's instance, account, or data (the Aiven corpus rule: *"only services you create yourself are in scope"* — prove ownership of whatever you test). Read-only verbs by default — treat **POST/PUT/DELETE/PATCH as requiring deliberate care** (a mutating request against shared infra can destroy data or breach scope). For every "offensive action," prefer the **static-in-the-clone equivalent**: prove a rate-limit reads a spoofable header by *grepping the limiter*, not by firing 100 requests; prove CI-injection by *reading the workflow YAML*, not POSTing the payload to a real org. A blocking control (WAF/captcha/429) is the program saying *stop the automated path* — pivot to reading code, never defeat it. (Provenance: distilled from community bug-bounty harness repos; their live-fire / autopilot / credential-brute / WAF-bypass behaviors are deliberately excluded as safe-harbor risks.)
+**Authorization first:** stay within the declared operating mode and current program scope. Never test another tenant's instance, account, or data. Treat mutating requests against shared infrastructure as higher-impact validation actions requiring explicit permission and an owned disposable object. Prefer source inspection or a controlled local reproduction when it establishes the same boundary. A WAF, CAPTCHA, rate limit, or other blocking control ends that automated path; return to source analysis rather than trying to defeat it.
 
 ## 0. Proving you own the tested instance (ownership attestation — pre-empts the #1 managed-program triage question)
 On a managed/SaaS program the first triage question for any live PoC is *"prove this is YOUR instance, not another customer's."* Put the attestation **in the report** so it's never asked:
 - Your account/org id + the instance hostname/UUID from your dashboard (screenshot), its creation timestamp, and a **unique benign marker you planted** (a value only your account would set).
-- For a two-account authz PoC, show **both** accounts are yours (both dashboards) — provision your own second account/org for the "victim" side; never use a real other tenant.
+- For a two-account authorization proof, show **both** comparison accounts are yours. Never use another customer's account or data.
 - If you spun up a throwaway account/org for the test, say so and name it — this is normal and accepted (the disclosed Aiven Kafka-Connect RCE reporter made a fresh account precisely to prove ownership).
 
-## 1. Live-PoC reproduction recipe (the "prove it on an instance you provisioned" engine)
-This is how you produce the *running PoC* the demonstrated-impact bar demands (methodology §4.0), and the engine for the upstream-CVE→IBB and grey-box lanes.
+## 1. Controlled reproduction recipe
+Use this only at the lowest proof level that can establish the boundary.
 ```
-1. STANDUP   git clone vulhub (or the OSS repo) → docker compose up -d; remap the port off 8080 (dodge your own proxy)
-2. BASELINE  curl -sI → confirm the EXACT vulnerable version (patch boundaries decide validity); run one benign request; note the container name
-3. EXPLOIT   make BOTH explicit: the payload AND its delivery vector (these are separate gaps — you may know SpEL→Runtime.exec but not that the vector is the `spring.cloud.function.routing-expression` HEADER on /functionRouter). curl quirks: --path-as-is; Runtime.exec(String[]) to dodge shell-quoting. `exec(cmd)` returns a **Process, not a String** — a bare `exec("id")` reflects nothing, so confirm via an OOB curl *inside* the payload, not by expecting stdout. And keep Spring4Shell (CVE-2022-22965) distinct from spring-cloud-function SpEL: 22965 needs **JDK 9+ AND a WAR-on-Tomcat deploy** — it does NOT fire on the default embedded-jar Spring Boot, so kill that claim unless the deploy actually matches.
-4. VERIFY    the SIDE-EFFECT, never trust HTTP 200/500: `docker exec <c> ls -la /tmp/pwned` (planted root-owned file) · the leaked secret's *content* in the body · `id`/`uname` output · the other actor's actual data · real DOM execution
-5. VERDICT   PASS-live | PARTIAL | HONEST-NEGATIVE. Severity = MAX reachable impact, not the average
-6. CLEANUP   docker compose down -v; pkill the helpers
+1. STAND UP   run the exact affected version in an isolated local environment; record the version and container/process identity
+2. BASELINE   send one benign request and one known-negative request; record their observable effects
+3. REPRODUCE  make the crafted input and its delivery vector explicit; use a harmless deterministic action appropriate to the primitive
+4. VERIFY     inspect the side effect, not only HTTP status: unique marker file, controlled listener receipt, owned test record, or browser execution flag
+5. COMPARE    rerun the benign and negative controls; classify as CONFIRMED, PARTIAL, or NOT_REPRODUCED
+6. CLEAN UP   remove containers, volumes, test accounts/data, markers, and helper listeners
 ```
-The proof is the **verified side-effect**, not the response code. Separate a *missing-payload* gap (you don't know the exploit string) from a *missing-delivery-vector* gap (you know the string, not where it goes) — budget discovery time for the vector even when the payload is obvious.
+For command or code execution, create a uniquely named marker inside the disposable environment and verify it directly. For outbound-request behavior, use a local controlled listener. For data-boundary behavior, use uniquely tagged records belonging to accounts you own. The proof is the verified side effect, not the response code. Keep a missing-input gap separate from a missing-delivery-vector gap.
+
+Delivery details remain load-bearing. For Spring Cloud Function SpEL, for example, the expression and the `spring.cloud.function.routing-expression` header on `/functionRouter` are separate requirements. `Runtime.exec` returns a `Process`, not command output, so verify a local marker rather than expecting reflection. Keep that class distinct from Spring4Shell (CVE-2022-22965), which requires JDK 9+ and a WAR deployment on Tomcat rather than the default embedded Spring Boot JAR. Use `curl --path-as-is` when the exact path representation is part of the tested invariant.
 
 ## 2. FP-disproof control tests — run BEFORE writing (each kills a specific fake-bug shape)
 The validation gate (§4.5) says "prove impact"; these say *how to disprove the look-alike*. Run the matching one the moment a finding "looks real." (Soundness is first-principles; the source repo self-graded these against its own lab — trust the logic, not the score.)
@@ -28,7 +30,7 @@ The validation gate (§4.5) says "prove impact"; these say *how to disprove the 
 | Looks like | Control test that settles it | Kill condition |
 |---|---|---|
 | **IDOR** (200 with an id) | Does the body contain the *other actor's* data, or just echo your input? | echoes your own/again-public data → **not a leak** |
-| **Blind SSRF/XXE/RCE** (URL reflected in a response/error) | Point it at a **unique-marker host → your own OOB listener** | 0 callbacks → **no SSRF** (a reflected URL is nothing) |
+| **Blind SSRF/XXE/RCE** (URL reflected in a response/error) | In a local environment, point it at a unique path on your controlled listener; in `PROGRAM_HOSTED`, use an explicitly permitted researcher-owned listener | 0 callbacks → **no outbound request** (a reflected URL proves nothing) |
 | **Reflected/stored XSS** | Inject a **unique random marker** (generic words collide w/ page text); then inject `<x9>` and check raw vs `&lt;x9&gt;` | returned encoded → **reflection ≠ execution → kill** |
 | **File/user existence oracle** ("blocked"/"exists") | Re-probe a **guaranteed-garbage** input of the same shape (`garbage-<rand>.asmx`) | identical response → **blanket policy, not a state oracle** |
 | **User enumeration / "same = no bug"** | **Body-diff byte-by-byte** (never status codes); two 401s can differ in body | identical bodies → no enum; differing → real |

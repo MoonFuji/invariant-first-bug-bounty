@@ -12,6 +12,28 @@ Model one security invariant before searching for violations. Trace it through t
 
 The task does not require a finding. `HOLD`, `KILL`, `ROUTE_ELSEWHERE`, and `NO_REPORTABLE_FINDING` are successful outcomes when supported by evidence.
 
+## Operating mode
+
+Declare one mode before investigation and record its authorization in `target.scope_evidence`:
+
+- **`SOURCE_ONLY` (default):** inspect the repository and public documentation; build and run code locally; use local fixtures, containers, accounts, listeners, and test data. Do not send validation traffic to production or third-party systems, use discovered credentials, access another person's data, or extend access beyond the controlled environment.
+- **`PROGRAM_HOSTED`:** interact only with the exact hosted assets, accounts, data, methods, and rates explicitly permitted by current program rules. Use accounts and data you own. A repository being public or listed in scope does not by itself authorize hosted testing.
+
+Reason about realistic consequences in either mode, but execute only actions permitted by the declared mode. When authorization is unclear, remain in `SOURCE_ONLY` or set `HOLD`; do not infer permission.
+
+## Validation hierarchy
+
+Use the least-impact artifact that conclusively establishes the security boundary:
+
+1. Complete static source trace.
+2. Focused unit or regression test.
+3. Isolated local process.
+4. Disposable local container.
+5. Researcher-owned self-hosted deployment.
+6. Program-hosted owned account or instance, only in `PROGRAM_HOSTED` when explicitly authorized.
+
+Do not advance when a lower-impact level already establishes the capability delta required by the destination. Reproduce sensitive effects with controlled equivalents: unique canaries instead of real secrets, benign files instead of system data, and local listeners instead of third-party or privileged services.
+
 ## Mandatory candidate state
 
 Persist every candidate outside the conversation so later sessions cannot silently override a failed gate:
@@ -41,10 +63,10 @@ python scripts/validate-candidate.py --stage report <hunt-dir>/candidate.json
 
 ## Workflow
 
-1. **Verify target and route.** Record the exact program, asset, repository, commit/release, scope evidence, bounty eligibility, and when scope was checked. Identify the project that owns the vulnerable code and would ship the fix.
+1. **Verify target, mode, and route.** Record the operating mode, exact program, asset, repository, commit/release, scope evidence, bounty eligibility, and when scope was checked. Identify the project that owns the vulnerable code and would ship the fix.
 2. **Build the security model.** Record principals, protected assets, trust boundaries, state stores, enforcement points, and one invariant. Read selectively until these are concrete; grep output is not a model.
-3. **Trace the invariant.** Follow attacker input through validation/canonicalization, authorization, mutation/read, persistence or external effect, and at least one safe or parallel sibling.
-4. **Find the capability delta.** State what the attacker can do before and after. Equal capabilities mean no security impact.
+3. **Test relevance, then trace.** State a provisional security boundary and plausible new capability. If no meaningful capability change is possible, stop early. Otherwise follow untrusted input through validation/canonicalization, authorization, mutation/read, persistence or external effect, and at least one safe or parallel sibling.
+4. **Find the capability delta.** State what the test principal can do before and after the complete trace. Equal capabilities mean no security impact.
 5. **Attempt the strongest refutation.** Test the best benign explanation: intended sharing, attacker already controls the secret/config/peer, production hardening, safe caller contract, unreachable event shape, or downstream misuse. An unresolved refutation means `HOLD`; a confirmed refutation means `KILL` or honest downgrade.
 6. **Prove the exact boundary.** Use the proof type the destination accepts. Capture an observable side effect and negative controls, not only a status code, callback, code trace, or fabricated impossible input.
 7. **Route before reporting.** Verify that the destination owns the faulty code and accepts this proof class. A real bug in a dependency may require an upstream advisory rather than the product's bounty program.
@@ -75,7 +97,7 @@ Never promote a regex hit directly to a candidate. Attach it to an invariant and
 
 | Asset/destination | Minimum persuasive proof |
 |---|---|
-| Hosted product/API | Live owned accounts or owned instance; victim marker/state change plus anonymous/nonexistent controls where relevant |
+| Hosted product/API | In `PROGRAM_HOSTED` only: owned accounts or owned instance; comparison-account marker/state change plus anonymous/nonexistent controls where relevant |
 | Source-code program | Exact executable path using shipped behavior; prove production relevance and confirm the program accepts local/source proof |
 | Library/SDK/upstream | Executable regression test, realistic caller contract, and usually maintainer fix/advisory/CVE for upstream routing |
 | Parser/CLI/firmware/hardware | Executable artifact on the real parser/runtime/device or an exact enforcement model accepted by the destination |

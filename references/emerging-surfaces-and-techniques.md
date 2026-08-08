@@ -4,7 +4,7 @@ The taxonomy in `bug-class-taxonomy.md` describes bug primitives. This file desc
 
 ## Contents
 - 1. Emerging surfaces — AI/LLM/MCP · CI/CD · supply-chain · cloud/IAM · modern auth · protocol/parser
-- 2. Force-multiplier techniques — CVE-diff · incomplete-fix · variant analysis · secret-scanning · fresh-program windfall
+- 2. High-leverage techniques — CVE-diff · incomplete-fix · variant analysis · secret-scanning · recently expanded scope
 - 3. Hot vs saturated — the 2026 read
 
 ---
@@ -12,9 +12,9 @@ The taxonomy in `bug-class-taxonomy.md` describes bug primitives. This file desc
 ## 1. Emerging surfaces
 
 ### 1A. AI / LLM / MCP applications
-The fastest-growing surface, and most defenders haven't caught up. Dedicated programs exist (huntr's AI/ML lane; many vendors added LLM scope). Classes that actually pay (impact, not "the model said a bad word"):
+This is a rapidly changing surface with dedicated program coverage in some venues. Impact patterns that programs may accept require a consequential boundary failure, not merely undesirable model output:
 - **Prompt injection with a real sink** — indirect injection (poisoned web page / doc / email the agent ingests) that drives a *consequential* tool call: exfiltrates data, sends a request, runs code, modifies state. The payout is in the downstream action, not the injection itself.
-- **Tool/function-calling abuse** — an LLM agent wired to tools (shell, HTTP, file, DB) where crafted input makes it call a dangerous tool with attacker params. This is RCE/SSRF/IDOR *through* the agent.
+- **Tool/function-calling boundary failure** — an LLM agent wired to tools (shell, HTTP, file, DB) where crafted input causes a security-sensitive tool call with untrusted parameters. This is RCE/SSRF/IDOR *through* the agent.
 - **MCP server vulnerabilities** — MCP servers are normal servers with a tool API: command injection in a tool that shells out, path traversal in a file tool, SSRF in a fetch tool, missing authz between tools, secret leakage through tool output. Audit them exactly like any backend (taxonomy §2/§5/§11) — most are young and lightly reviewed.
 - **Unsafe output handling** — LLM output rendered as HTML (→XSS), passed to `eval`/a shell (→RCE), or used in a SQL query (→SQLi). The model is just another untrusted source.
 - **RAG / vector-store injection**, training-data/file-upload poisoning, **insecure model deserialization** (pickle-backed model files → taxonomy §4; this is a live huntr lane).
@@ -28,10 +28,10 @@ Pipelines run with high privilege and secrets; misconfig is common and greppable
 - **`pull_request_target` + checkout of PR head ("pwn request")** — runs *trusted* workflow with *fork* code/secrets in scope → secret theft / repo compromise.
 - **Script injection** — `${{ github.event.issue.title }}` / `…pull_request.title` / `…comment.body` / branch name interpolated directly into a `run:` block → command injection in the runner. Fix is env-indirection; the bug is direct interpolation.
 - **Over-broad `permissions:`**, `GITHUB_TOKEN` write where read suffices, secrets passed to fork PRs, self-hosted runner reuse, cache poisoning, unpinned third-party actions (`uses: foo/bar@main`) → supply-chain.
-- Look in the org's *public* repos even when the bounty is for the product — a workflow that leaks a deploy token is in-scope impact.
+- Public organization repositories can provide architectural context, but test or report them only when the program scope or disclosure policy covers the repository and affected asset.
 
 ### 1C. Supply-chain
-- **Dependency confusion** — an internal package name not claimed on the public registry; publish it and the build pulls yours. Check `package.json`/`requirements.txt`/`pom.xml` for internal-looking names not on npm/PyPI.
+- **Dependency confusion** — an internal package name can resolve to an unintended public package. Confirm resolution with a private local registry or package-manager dry run; do not claim or publish a package name used by another organization.
 - **Typosquat / install-script abuse**, postinstall hooks, malicious-maintainer patterns (report the *vector* in scope; never publish actual malware).
 - **Lockfile / integrity gaps**, unpinned base images, compromised-action propagation (the 2025 worm-style Actions incidents).
 - **n-day→0-day fork propagation** — a fix landed upstream but downstream forks/vendored copies still ship the bug (ties to §2).
@@ -39,7 +39,7 @@ Pipelines run with high privilege and secrets; misconfig is common and greppable
 ### 1D. Cloud / IAM / infra-as-code
 - **SSRF→metadata** is the bridge from app to cloud (taxonomy §5): IMDSv1 creds, GCP/Azure metadata.
 - **IaC misconfig** in scope: public S3/buckets, over-permissive IAM (`*:*`), security groups open to `0.0.0.0/0`, secrets in Terraform state, exposed `.git`/`.env`/`/actuator`/`/debug`.
-- **Subdomain takeover** — dangling DNS (CNAME to a deprovisioned SaaS) — fast recon win on broad-scope programs.
+- **Subdomain takeover** — dangling DNS to a deprovisioned service can create an ownership boundary failure. Verify provider behavior and program authorization before attempting any resource claim.
 - **Container/k8s** — exposed kubelet/dashboard, SSRF to internal services, secrets in env.
 
 ### 1E. Modern authentication (deep dive of taxonomy §8)
@@ -79,7 +79,7 @@ Turn one confirmed bug into a query and sweep for siblings.
 - Client bundles, source maps, Docker image layers, CI logs, public Postman/Swagger.
 - Validate a found secret *minimally and within policy* — never use a live prod credential to pivot; report the exposure.
 
-### 2E. Fresh-program / new-scope windfall
+### 2E. Recently added program or scope
 - Diff `github.com/arkadiyt/bounty-targets-data` over time (it aggregates HackerOne/Bugcrowd/Intigriti/YWH scopes). A newly-added asset or newly-launched program has the largest untouched reserve — be first.
 - `bbscope` to pull structured scope; subscribe to launch notifications. The freshness principle (reserves are largest at launch, decay with age) is *the* highest-leverage targeting move.
 
@@ -97,7 +97,7 @@ Turn one confirmed bug into a query and sweep for siblings.
 - CI/CD & GitHub Actions misconfig — greppable, common, under-reported on product programs.
 - Authorization / multi-tenant / business-logic / race — scanners and bots structurally can't find these; the human edge.
 - Parser differentials & smuggling — high skill floor keeps competition thin.
-- Fresh programs / newly-added scope — the reserve play.
+- Fresh programs or newly added scope — verify current rules and ownership before investing.
 
 **Saturated / low-EV (avoid unless the target is fresh or you have a real chain):**
 - Reflected XSS / classic SQLi / open redirect on mature, scanned web programs — every bot runs these.
