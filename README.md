@@ -12,7 +12,7 @@ Coding agents often find a dangerous function, build a local proof-of-concept, a
 - Does the target own the faulty code and accept this proof type?
 - How does the root cause differ from prior reports and upstream work?
 
-This skill requires one security invariant, a complete source-to-effect trace, the strongest benign explanation, negative controls, route ownership, and semantic duplicate analysis. It stores those decisions in `candidate.json` and blocks report drafting until deterministic validation passes.
+This skill requires one security invariant, evidence through the gate where research ends, the strongest benign explanation, negative controls, route ownership, and semantic duplicate analysis. Reportable candidates still require a complete source-to-effect trace. It stores those decisions in `candidate.json` and blocks report drafting until deterministic validation passes.
 
 ## Install
 
@@ -85,7 +85,7 @@ cp assets/candidate.template.json /path/to/hunt/candidate.json
 python scripts/validate-candidate.py --stage model /path/to/hunt/candidate.json
 ```
 
-Record a terminal decision after completing the trace:
+Record a terminal decision after completing the evidence required through its gate:
 
 ```bash
 python scripts/validate-candidate.py --stage decision /path/to/hunt/candidate.json
@@ -131,7 +131,7 @@ The skill fingerprints a candidate as:
 boundary|primitive|invariant|effect
 ```
 
-Agents compare that fingerprint with the researcher's reports, program disclosures, upstream issues and patches, recent advisories, and sibling implementations. A clean public search does not prove novelty because private duplicate pools remain invisible. A recent advisory increases contestability instead of creating a novelty bonus.
+Agents record a query and outcome for the researcher's reports, program disclosures, upstream history, and recent advisories. They select one globally closest known match, compare all four fingerprint axes, and classify the candidate as `duplicate`, `distinct`, or `uncertain`. A clean public search does not prove novelty because private duplicate pools remain invisible. A recent advisory increases contestability instead of creating a novelty bonus.
 
 When HackerOne MCP tools are available, `SKILL.md` defines the order for checking the researcher's reports, program disclosures, cross-program search, and close report matches.
 

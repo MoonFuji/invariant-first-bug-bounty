@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "candidate_id": "",
   "decision_history": [],
   "target": {
@@ -59,19 +59,51 @@
   },
   "novelty": {
     "root_cause_fingerprint": "",
-    "checked_at": "",
-    "own_reports": [],
-    "program_reports": [],
-    "upstream_history": [],
-    "recent_advisories": [],
+    "checks": [
+      {
+        "source": "own_reports",
+        "query": "",
+        "checked_at": "",
+        "result": "unavailable",
+        "reason": "",
+        "closest_match": null
+      },
+      {
+        "source": "program_disclosures",
+        "query": "",
+        "checked_at": "",
+        "result": "unavailable",
+        "reason": "",
+        "closest_match": null
+      },
+      {
+        "source": "upstream_history",
+        "query": "",
+        "checked_at": "",
+        "result": "unavailable",
+        "reason": "",
+        "closest_match": null
+      },
+      {
+        "source": "recent_advisories",
+        "query": "",
+        "checked_at": "",
+        "result": "unavailable",
+        "reason": "",
+        "closest_match": null
+      }
+    ],
+    "closest_known_match": null,
     "semantic_delta": "",
+    "classification": "uncertain",
     "private_duplicate_risk": "unknown"
   },
   "decision": {
     "verdict": "HOLD",
+    "gate": "scope",
     "failed_gates": [],
     "missing_evidence": [
-      "Complete target verification, security model, and proof."
+      "Complete target verification."
     ],
     "reason": "Candidate is not yet validated.",
     "decided_at": ""

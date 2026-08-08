@@ -45,7 +45,7 @@ python scripts/validate-candidate.py --stage model <hunt-dir>/candidate.json
 
 Fill `target` and `model` before broad recon. Update the same file as evidence changes; do not create a cleaner replacement that omits an earlier failed gate.
 
-After setting any terminal verdict, validate the completed trace:
+After setting any terminal verdict, validate the evidence accumulated through its terminal gate:
 
 ```bash
 python scripts/validate-candidate.py --stage decision <hunt-dir>/candidate.json
@@ -70,8 +70,8 @@ python scripts/validate-candidate.py --stage report <hunt-dir>/candidate.json
 5. **Attempt the strongest refutation.** Test the best benign explanation: intended sharing, attacker already controls the secret/config/peer, production hardening, safe caller contract, unreachable event shape, or downstream misuse. An unresolved refutation means `HOLD`; a confirmed refutation means `KILL` or honest downgrade.
 6. **Prove the exact boundary.** Use the proof type the destination accepts. Capture an observable side effect and negative controls, not only a status code, callback, code trace, or fabricated impossible input.
 7. **Route before reporting.** Verify that the destination owns the faulty code and accepts this proof class. A real bug in a dependency may require an upstream advisory rather than the product's bounty program.
-8. **Measure contestability.** Fingerprint the root cause as `boundary|primitive|invariant|effect`; compare it with your own reports, program disclosures, upstream history, recent advisories, and sibling implementations.
-9. **Decide and persist.** Set exactly one terminal verdict in `candidate.json`, name failed gates or missing evidence, then run `--stage decision`.
+8. **Measure contestability.** Fingerprint the root cause as `boundary|primitive|invariant|effect`; record a query and outcome for your own reports, program disclosures, upstream history, and recent advisories. Select one globally closest known match and compare all four fingerprint axes.
+9. **Decide and persist.** Set exactly one terminal verdict and `decision.gate` in `candidate.json`, name failed gates or missing evidence, then run `--stage decision`.
 
 ## Depth contract
 
@@ -115,7 +115,9 @@ When HackerOne MCP is available, begin with your own outcomes, then search the t
 4. `mcp__hackerone__GetHackerOneReportByID` — open close matches instead of comparing titles only.
 5. Check GHSA/CVE, issue/PR history, changelog, branches, releases, and `git log -p` for the exact enforcement path.
 
-No public match is weak evidence, not proof of novelty; private duplicate pools remain invisible. A recent advisory or famous component raises contestability. Continue only when the candidate has a precise semantic delta from nearby work.
+For each source, persist the query, check time, and one result: `checked` with its closest match, `no_match`, or `unavailable` with a reason. Do not use an empty array to blur “not searched” into “no result.” Rank the retrieved matches, store one `closest_known_match`, compare its boundary, primitive, invariant, and effect, then set `novelty.classification` to `duplicate`, `distinct`, or `uncertain`.
+
+No public match is weak evidence, not proof of novelty; private duplicate pools remain invisible. A recent advisory or famous component raises contestability. `REPORTABLE` requires `distinct`; a known matching root cause is `KILL @ novelty`; unresolved comparison evidence is `HOLD @ novelty`.
 
 Cross-model agreement is hypothesis prioritization, not validation. Models share training data, public advisories, and prompt framing. Only independent artifacts can clear a gate.
 
@@ -128,6 +130,8 @@ Cross-model agreement is hypothesis prioritization, not validation. Models share
 | `KILL` | A gate is disproven, impact is unchanged, the behavior is intended, or the candidate is covered/fixed |
 | `ROUTE_ELSEWHERE` | The bug may be real, but another project or disclosure rail owns the fix |
 | `NO_REPORTABLE_FINDING` | The investigated invariant held after a complete trace and refutation attempt |
+
+`decision.gate` records where research ended: `scope`, `route`, `model`, `relevance`, `reachability`, `capability_delta`, `refutation`, `proof`, `ownership`, `novelty`, or `reportability`. `HOLD` requires completed prerequisite evidence plus the specific missing item. `KILL` requires evidence through the failed gate, not fabricated downstream fields. `ROUTE_ELSEWHERE` requires verified ownership and routing evidence. Full trace, proof, route, and novelty evidence remain mandatory for `REPORTABLE`; a complete trace and refutation remain mandatory for `NO_REPORTABLE_FINDING`.
 
 ## Rationalizations to reject
 
