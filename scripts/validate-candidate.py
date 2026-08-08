@@ -14,6 +14,7 @@ VERDICTS = {
     "ROUTE_ELSEWHERE",
     "NO_REPORTABLE_FINDING",
 }
+OPERATING_MODES = {"SOURCE_ONLY", "PROGRAM_HOSTED"}
 REFUTATION_RESULTS = {"refuted", "confirmed", "unresolved"}
 PROOF_TYPES = {
     "none",
@@ -60,8 +61,8 @@ def require_bool(document, path, errors, *, expected=None):
 
 
 def validate_common(document, errors):
-    if value_at(document, "schema_version") != 1:
-        errors.append("schema_version must be 1")
+    if value_at(document, "schema_version") != 2:
+        errors.append("schema_version must be 2")
 
     verdict = value_at(document, "decision.verdict")
     if verdict not in VERDICTS:
@@ -88,6 +89,13 @@ def validate_common(document, errors):
 
 def validate_model(document, errors):
     validate_common(document, errors)
+
+    operating_mode = value_at(document, "target.operating_mode")
+    if operating_mode not in OPERATING_MODES:
+        errors.append(
+            "target.operating_mode must be one of "
+            + ", ".join(sorted(OPERATING_MODES))
+        )
 
     for path in (
         "candidate_id",

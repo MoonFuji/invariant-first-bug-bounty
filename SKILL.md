@@ -14,7 +14,7 @@ The task does not require a finding. `HOLD`, `KILL`, `ROUTE_ELSEWHERE`, and `NO_
 
 ## Operating mode
 
-Declare one mode before investigation and record its authorization in `target.scope_evidence`:
+Declare one mode before investigation. Store it in `target.operating_mode` and record its authorization basis in `target.scope_evidence`:
 
 - **`SOURCE_ONLY` (default):** inspect the repository and public documentation; build and run code locally; use local fixtures, containers, accounts, listeners, and test data. Do not send validation traffic to production or third-party systems, use discovered credentials, access another person's data, or extend access beyond the controlled environment.
 - **`PROGRAM_HOSTED`:** interact only with the exact hosted assets, accounts, data, methods, and rates explicitly permitted by current program rules. Use accounts and data you own. A repository being public or listed in scope does not by itself authorize hosted testing.

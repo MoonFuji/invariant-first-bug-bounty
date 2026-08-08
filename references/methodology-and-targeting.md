@@ -16,7 +16,7 @@ Select for **provability, ownership, and contestability**, not headline severity
 
 Before auditing, record in `candidate.json`:
 
-- The declared operating mode (`SOURCE_ONLY` by default, or explicitly authorized `PROGRAM_HOSTED`) in `target.scope_evidence`.
+- The declared operating mode (`SOURCE_ONLY` by default, or explicitly authorized `PROGRAM_HOSTED`) in `target.operating_mode`, with its authorization basis in `target.scope_evidence`.
 - Current program status, asset, accepted bug classes, and scope evidence.
 - Exact repository and commit/release actually shipped or accepted by the program.
 - Whether a hosted instance, owned accounts, local deployment, device, or upstream advisory route is available.
