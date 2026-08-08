@@ -77,6 +77,7 @@ NOVELTY_SOURCES = {
     "recent_advisories",
 }
 NOVELTY_CHECK_RESULTS = {"checked", "no_match", "unavailable"}
+CURRENT_UPSTREAM_RESULTS = {"vulnerable", "fixed", "unavailable"}
 NOVELTY_CLASSIFICATIONS = {"duplicate", "distinct", "uncertain"}
 PRIVATE_DUPLICATE_RISKS = {"unknown", "low", "medium", "high"}
 
@@ -525,6 +526,8 @@ def validate_novelty_fields(document, errors):
             (c for c in checks if isinstance(c, dict) and c.get("source") == "upstream_history"),
             None,
         )
+        repo = value_at(document, "target.repository")
+        is_github = isinstance(repo, str) and "github.com/" in repo
         covered = set()
         if isinstance(upstream, dict) and isinstance(upstream.get("channels"), list):
             for channel in upstream["channels"]:
@@ -544,12 +547,59 @@ def validate_novelty_fields(document, errors):
                         errors.append(
                             "novelty upstream channel marked unavailable requires a reason"
                         )
-                    covered.add(name)
+                    if is_github and name in {"issues", "pull_requests"}:
+                        # These searches exist on GitHub: `unavailable` must mean
+                        # attempted-and-failed (with an artifact) and never counts
+                        # as coverage, so `unavailable` cannot stand in for a search.
+                        ev = channel.get("evidence")
+                        if not isinstance(ev, dict) or not all(
+                            isinstance(ev.get(k), str) and ev.get(k).strip()
+                            for k in ("method", "query", "artifact")
+                        ):
+                            errors.append(
+                                f"GitHub {name} channel marked unavailable must record an "
+                                "attempted-search artifact (evidence.method, query, artifact)"
+                            )
+                    else:
+                        covered.add(name)
         if not REQUIRED_UPSTREAM_CHANNELS.issubset(covered):
             errors.append(
                 "distinct requires upstream_history channels covering commits, issues, "
                 "pull_requests with search artifacts (git log alone is insufficient)"
             )
+
+        # The current default branch must be confirmed still vulnerable; a stale
+        # checkout can be vulnerable while `main` is already fixed.
+        cus = value_at(document, "novelty.current_upstream_state")
+        if not isinstance(cus, dict):
+            errors.append(
+                "distinct requires novelty.current_upstream_state confirming the current "
+                "default branch is still vulnerable, with a fetch artifact"
+            )
+        else:
+            cres = cus.get("result")
+            if cres not in CURRENT_UPSTREAM_RESULTS:
+                errors.append(
+                    "novelty.current_upstream_state.result must be one of "
+                    + ", ".join(sorted(CURRENT_UPSTREAM_RESULTS))
+                )
+            elif cres == "fixed":
+                errors.append(
+                    "novelty.current_upstream_state result fixed forbids distinct; KILL @ novelty "
+                    "or route as a historical/advisory finding"
+                )
+            elif cres == "unavailable":
+                errors.append(
+                    "novelty.current_upstream_state unavailable -> HOLD @ novelty; cannot claim distinct"
+                )
+            else:  # vulnerable
+                require_evidence(cus, "novelty.current_upstream_state", errors)
+                for key in ("ref", "path", "checked_at"):
+                    value = cus.get(key)
+                    if not isinstance(value, str) or not value.strip():
+                        errors.append(
+                            f"novelty.current_upstream_state.{key} must be a non-empty string"
+                        )
 
         root_fp = value_at(document, "novelty.root_cause_fingerprint")
         for path, match in matches:
@@ -662,6 +712,16 @@ def validate_decision(document, errors):
         validate_common(document, errors)
 
     require_text(document, "decision.decided_at", errors)
+
+    # A confirmed terminal refutation must land at the gate its kind implies.
+    rv = refutation_view(document)
+    if rv["kind"] in TERMINAL_REFUTATION_KINDS and rv["result"] == "confirmed":
+        allowed = TERMINAL_KIND_GATES.get(rv["kind"], set())
+        if verdict in {"KILL", "ROUTE_ELSEWHERE"} and gate not in allowed:
+            errors.append(
+                f"confirmed terminal refutation '{rv['kind']}' requires decision.gate in "
+                + ", ".join(sorted(allowed))
+            )
 
     if verdict == "KILL":
         if gate in {"relevance", "capability_delta"}:
