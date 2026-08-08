@@ -16,6 +16,7 @@ Select for **provability, ownership, and contestability**, not headline severity
 
 Before auditing, record in `candidate.json`:
 
+- The declared operating mode (`SOURCE_ONLY` by default, or explicitly authorized `PROGRAM_HOSTED`) in `target.scope_evidence`.
 - Current program status, asset, accepted bug classes, and scope evidence.
 - Exact repository and commit/release actually shipped or accepted by the program.
 - Whether a hosted instance, owned accounts, local deployment, device, or upstream advisory route is available.
@@ -37,7 +38,7 @@ A recent advisory is a **contestability penalty** unless the candidate proves a 
 
 Route classes:
 
-- **Hosted/grey-box:** read source to locate the invariant, then prove it with owned accounts/data or an owned deployment.
+- **Hosted/grey-box:** use only in `PROGRAM_HOSTED`; read source to locate the invariant, then use explicitly permitted owned accounts/data or an owned deployment.
 - **Source-code program:** reproduce the exact shipped code path and verify the program accepts local/source evidence.
 - **Upstream library/SDK:** report to the project that owns the code; obtain a fix/advisory/CVE when required, then use IBB only if eligible.
 - **Black-box:** reconstruct principals, objects, state transitions, and authorization from owned-account behavior before testing.
@@ -196,7 +197,7 @@ Proof must exercise the exact load-bearing behavior and capture an observable ef
 
 Acceptable proof varies by route:
 
-- Hosted app/API: two owned identities or owned instance, planted marker/state change, anonymous and nonexistent controls when relevant.
+- Hosted app/API: in `PROGRAM_HOSTED`, two owned identities or an owned instance, planted marker/state change, and anonymous/nonexistent controls when explicitly permitted and relevant.
 - Source-code program: executable exact path using shipped configuration, plus evidence that the destination treats that path as its boundary.
 - Library/SDK: realistic caller contract and executable regression; upstream fix/advisory/CVE may be the accepted proof rail.
 - Parser/CLI: real parser/runtime and a file, process, or state effect—not only acceptance of an option.

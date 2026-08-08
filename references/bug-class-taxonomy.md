@@ -1,6 +1,8 @@
-# Bug-Class Taxonomy — signals, sinks, and payout bands
+# Bug-Class Taxonomy — analysis and controlled-validation patterns
 
-This file maps 19 bug classes to the architecture where each primitive lives, source/sink signals, confirmation requirements, and realistic payout bands. Load only the entries relevant to the security invariant and enforcement path already recorded in `candidate.json`; do not choose a class merely for novelty or breadth.
+This file maps 19 bug classes to the architecture where each primitive lives, source/sink signals, controlled confirmation methods, false-positive checks, and realistic impact. Load only the entries relevant to the security invariant and enforcement path already recorded in `candidate.json`; these are investigative possibilities, not a checklist.
+
+In `SOURCE_ONLY`, reproduce sensitive effects with controlled local equivalents. A cloud metadata service, internal admin service, credential-bearing endpoint, sensitive system file, or another person's data is an **impact model**, not an instruction to contact or retrieve it. In `PROGRAM_HOSTED`, perform only the actions explicitly permitted by current program rules. Preserve the distinction between confirming a primitive and demonstrating its strongest authorized consequence.
 
 ## Contents
 
@@ -24,7 +26,7 @@ This file maps 19 bug classes to the architecture where each primitive lives, so
 18. GraphQL-specific
 19. Secrets exposure & weak cryptography
 
-Payout bands are rough public-program medians; impact and program tier shift them a lot.
+Impact bands are rough public-program patterns; demonstrated capability and program policy matter more than the label.
 
 ---
 
@@ -41,67 +43,68 @@ Payout bands are rough public-program medians; impact and program tier shift the
 ## 2. OS command injection
 **Where:** anywhere user input reaches a shell.
 **Signals:** PHP `exec/system/shell_exec/passthru/proc_open/popen` + var; JS `child_process.exec(`/`execSync(` (vs the safer `execFile` with arg array); Python `os.system`, `subprocess.*(…, shell=True)`, `os.popen`; Go `exec.Command("sh","-c", userStr)` or `"bash","-c"`.
-**Confirm:** inject `;id`/`$(id)`/backticks/`|`; blind via timing (`sleep`) or OOB DNS.
+**Confirm:** in a disposable local environment, use the minimum syntax needed to create a unique benign marker or produce a short deterministic delay; verify against a known-negative input. Do not use external callbacks when a local side effect is sufficient.
 **Band:** $$$–$$$$ (often RCE).
 
 ## 3. Code injection / SSTI
 **Where:** templating engines fed user input as *template* not *data*; `eval`-family.
 **Signals:** Python `render_template_string(`, `Template(user).render(`, Jinja `{{ }}` from input, `eval(`/`exec(`; JS `eval(`, `new Function(`, `vm.runInNewContext`, template libs (Handlebars/Pug/EJS) compiling user strings; Ruby ERB; Java/Spring SpEL `#{}`, Thymeleaf, Velocity, FreeMarker; Go `text/template`.Parse(user).
-**Confirm:** polyglot `${7*7}`/`{{7*7}}`/`#{7*7}` → `49`; escalate to RCE per engine. Fingerprint the engine before picking a gadget: `{{7*'7'}}` → `7777777` = Jinja2 (Python string-repeat) vs `49` = Twig (numeric coercion); `${7*7}`→`49` = Freemarker/Velocity/**Mako**.
+**Confirm:** begin with a harmless arithmetic expression such as `${7*7}`/`{{7*7}}`/`#{7*7}` and fingerprint the engine from its result. `{{7*'7'}}` producing `7777777` suggests Jinja2 string repetition, while `49` suggests Twig numeric coercion; `${7*7}` can identify FreeMarker, Velocity, or Mako families. If code execution is required to establish impact, use a unique marker in a disposable local environment rather than an external connection or sensitive command.
 **Band:** $$$–$$$$.
 
 ## 4. Insecure deserialization
 **Where:** untrusted bytes into a native object deserializer.
 **Signals:** PHP `unserialize(` (+ POP-chain gadgets; `phar://` stream triggers it), Laravel `decrypt()` misuse; Python `pickle.load(s)`, `yaml.load(` without `SafeLoader`, `yaml.unsafe_load`, `jsonpickle`, `dill`, `shelve`, `numpy.load(allow_pickle=True)`; JS `node-serialize`, untrusted input to a deserializer with `_$$ND_FUNC$$_`; Java `ObjectInputStream.readObject`, XMLDecoder, fastjson/Jackson polymorphic typing; Ruby `Marshal.load`, YAML `Psych.load`; .NET `BinaryFormatter`.
-**Confirm:** gadget chain (ysoserial / ysoserial.net / phpggc) or, minimally, prove the deserializer runs on attacker bytes.
+**Confirm:** first prove that untrusted bytes reach the deserializer. When a gadget is required to establish impact, use a controlled local environment and a harmless deterministic side effect; known gadget-chain tools are analysis resources, not instructions to run against hosted systems.
 **Band:** $$$–$$$$ (RCE-class). Library-rich; confirm a realistic untrusted-input caller.
 
 ## 5. SSRF (incl. cloud/IMDS)
 **Where:** server fetches a user-supplied URL — webhooks, link-preview/unfurl, PDF/HTML render, image fetch, SSO metadata URL, "import from URL," SSRF via redirect.
 **Signals:** JS `axios/fetch/got/request(userURL)`; Python `requests.get(userURL)`, `urllib`, `httpx`; Go `http.Get(userURL)`; PHP `file_get_contents($url)`, cURL with user URL; any HTML/PDF renderer (wkhtmltopdf, Puppeteer) fed user HTML/URL.
-**Confirm:** OOB callback (Burp Collaborator/your DNS); escalate to cloud metadata `169.254.169.254` (AWS IMDSv1), GCP `metadata.google.internal` (needs `Metadata-Flavor` header), Azure IMDS; internal port scan; `file://`/`gopher://` where the client allows.
-**Pitfalls:** allow-list bypass via DNS rebinding, decimal/octal/IPv6 encodings, `[::]`, redirect-to-internal, `@`-userinfo tricks. Check whether the client *follows redirects* (most do) — a public URL that 302s to `169.254.169.254` beats an allow-list.
-**Payout reality — the loot ladder (only the top rungs pay; from disclosed corpus):** stolen internal token/header > reflected *internal* response body > metadata/localhost *content* > **distinct-error oracle** > timing port-scan > bare DNS/HTTP ping (this last alone is routinely closed Informative — "my server got a request" is not impact). Always capture *something from inside* the boundary.
+**Confirm:** use two controlled local listeners: one permitted baseline destination and one destination representing the restricted boundary. Record the outbound request, redirects, headers, response reflection, and negative controls. In `PROGRAM_HOSTED`, use only a researcher-owned listener explicitly permitted by the program.
+**Pitfalls:** allow-list bypass families include DNS changes, alternate IP encodings, IPv6 forms, redirects, and user-info parsing differences. Check redirect behavior with a controlled redirector that points to the local restricted listener; treat real metadata addresses as impact models.
+**Impact models:** restricted service content or server-held authentication material > reflected restricted response > demonstrated access to a protected destination > reliable reachability oracle > timing-only inference > bare callback. Under `SOURCE_ONLY`, model metadata services, localhost services, internal ports, credential-bearing responses, and alternate protocols with controlled listeners and canary values.
+- **Architecture-specific impact knowledge:** AWS IMDSv1 uses the link-local metadata address; GCP metadata normally requires `Metadata-Flavor`; Azure has its own metadata contract. Preserve these distinctions when reasoning about production relevance, but reproduce them with a local metadata-shaped service in `SOURCE_ONLY`.
 - **Header-injection SSRF:** an endpoint that proxies on a user-controlled `Host`/URL can leak the *reverse-proxy's* injected auth header (e.g. `X-*-Access-Token`) to your listener — always diff the outbound request headers, not just whether it connected.
-- **Blind → proof via error oracle:** when responses aren't reflected, paste the *distinct* error/timing for localhost vs a closed port vs `169.254.169.254` to prove internal reach; screenshot any internal app you actually rendered. That converts a blind SSRF from Informative to paid.
-- **Escalate blind → credentials** with protocol smuggling: `file://`, `gopher://`, and Windows UNC `\\attacker\share` (SMB → NTLM-hash leak, as in Apache CVE-2024-38472).
+- **Blind proof via controlled oracle:** when responses are not reflected, compare distinct errors or timing across a responding local listener, a closed local port, and the controlled restricted listener. Interleave repeated trials and retain negative controls.
+- **Protocol impact models:** `file://`, `gopher://`, and Windows UNC handling can change the reachable capability, including credential relay in some architectures. Establish protocol acceptance locally; do not solicit credentials or connect to third-party systems.
 **Band:** $$$–$$$$ when it reaches metadata/internal/credentials; $$ blind-with-oracle; ~N/A bare-ping-only.
 
 ## 6. Authorization — IDOR / BOLA / broken access control / multi-tenancy
 **Where:** the single highest-EV, lowest-dup web class. Any handler taking an object/tenant id; multi-tenant SaaS isolation; admin-only routes; the **list/export/bulk** variants of an otherwise-scoped resource.
 **Signals (read, don't just grep):** `findById(req.params.id)` / `Model.objects.get(pk=request.GET[...])` / `repo.findByX(name)` with **no owner/tenant predicate**; authz that checks the *caller's* role but loads the *target* by a global key; middleware applied to some routes but not a sibling; `tenantId` taken from the request body instead of the principal; mass-assignment that lets a user set `role`/`tenantId`/`isAdmin`.
-**Confirm:** two accounts (or two tenants) — access A's object as B. **With a live instance, run the identity-diff matrix (`grey-box-dynamic-testing.md` §3): the same request under A / B / anon / stale, then classify — A-reads-B = IDOR, low-reads-high = priv-esc, works-with-no-auth = missing-auth (a *different* bug), stops-after-logout = the control is WORKING (NOT a bug, the FP that eats slots).** For tenant bugs, trace one resource through **create/read/update/delete/list/export** and find the path missing the tenant filter (canonical shape: user-management loads the target by global username while the resource controllers are correctly `(id, tenantId)`-scoped — the one unscoped lookup is the bug).
+**Confirm:** use two accounts or tenants you own in a local deployment, or in `PROGRAM_HOSTED` when explicitly permitted. Run the same request under A / B / anonymous / stale states, then classify the capability delta. For tenant bugs, trace one owned test resource through create/read/update/delete/list/export and identify the path missing the tenant filter.
 **Pitfalls:** UUIDs don't make it safe (they leak); "horizontal" (peer) vs "vertical" (privilege) — both count. Function-level access control (a hidden admin endpoint reachable by a normal user) is the vertical variant.
 **Band:** $$–$$$$ (cross-tenant PII/takeover = critical). Scanners can't find these; humans must reason about the model.
 
 ## 7. Broken authentication / session / password-reset
 **Where:** login, MFA, session lifecycle, "forgot password," account-link/unlink, email-change.
 **Signals:** predictable/weak reset tokens (see §19 weak randomness); reset token not invalidated after use or not bound to the user; host-header poisoning in reset links (`Host: attacker` → poisoned link); response/redirect that leaks the token; OTP without rate-limit *and* without lockout (single-request logic flaw, not just volumetric); session fixation (session id not rotated on login); JWT/session not invalidated on logout/password-change; email-change without re-auth.
-**Confirm:** end-to-end takeover of a second test account you own.
+**Confirm:** reproduce the unauthorized authentication-state transition using a second test account you own, locally by default or in `PROGRAM_HOSTED` when permitted.
 **Band:** $$$–$$$$ (ATO).
 
 ## 8. JWT / OAuth / SAML / OIDC flaws
 **Where:** any token-based auth.
 **Signals:** JWT `alg:none` accepted; `jwt.verify(token, key)` **without** an `algorithms:` allow-list (RS256→HS256 confusion using the public key as HMAC secret); secret weak/guessable; `kid` path-traversal/SQLi; missing `exp`/`aud`/`iss` checks. OAuth: `redirect_uri` not strictly validated (open redirect → code/token theft), missing/limp `state` (CSRF on the callback → account linking), `response_type=token` leaking via referrer, PKCE absent on public clients, authorization-code injection, scope upgrade. SAML: signature not verified / XML signature wrapping (XSW) / comment-truncation (`admin@company.com<!---->.evil.com` — C14N strips the comment *before* the signature digest so the sig covers the full string, but the app reads the text node only up to the comment = `admin@company.com`; canonical case CVE-2017-11428 Ruby-SAML), `IsPassive`/recipient confusion.
-**Confirm:** forge/replay a token that the server accepts as another user.
+**Confirm:** in a controlled environment, show that a modified or replayed token is accepted as an owned comparison identity despite the intended token invariant.
 **Band:** $$$–$$$$.
 
 ## 9. Prototype pollution (JS)
 **Where:** recursive merge/clone/set of attacker-controlled JSON.
 **Signals:** `_.merge`/`_.defaultsDeep`/`_.set`, `Object.assign` deep variants, `lodash.merge`, `deepmerge`, `set(obj, userPath, val)`, query-string parsers; `obj[a][b]=c` where `a` can be `__proto__`/`constructor`/`prototype`.
-**Confirm:** pollute `({}).polluted` then show a *gadget* — DoS, property injection that flips an auth/`isAdmin` check, or chain to RCE/SSTI/XSS in the same app. A pollution with **no demonstrated gadget** is usually closed as informational — find the sink.
+**Confirm:** in a disposable local environment, demonstrate pollution and a consequential application gadget using owned test state or a benign marker. Pollution without a reachable security effect is not enough.
 **Band:** $$–$$$$ (gadget-dependent).
 
 ## 10. XXE
 **Where:** XML parsers with external entities enabled (often default-on in older libs).
 **Signals:** PHP `simplexml_load_*`/`DOMDocument->loadXML` (pre-libxml2.9 or with `LIBXML_NOENT`); Python `xml.etree`/`lxml`/`minidom` without `defusedxml`; Java `DocumentBuilder`/SAX/XMLInputFactory without `disallow-doctype-decl`; .NET `XmlDocument` with a resolver. Also SVG/DOCX/XLSX upload (zip-of-XML), SOAP, SAML.
-**Confirm:** file read via entity, or blind/OOB XXE (parameter entities → external DTD) when output isn't reflected. Often chains to SSRF.
+**Confirm:** use a benign local canary file or a controlled local listener to establish entity expansion. Treat sensitive file access and reachability of protected services as impact models unless reproduced inside the disposable environment.
 **Band:** $$$.
 
 ## 11. Path traversal / LFI / zip-slip / arbitrary file write
 **Where:** filename/path from user input joined to a base dir; archive extraction; template/include selection; file download/upload.
 **Signals:** `../` reaching `open`/`readFile`/`sendFile`/`include`/`require`; `os.path.join(base, userName)` / `filepath.Join(dst, hdr.Name)` (zip-slip — `Clean` does NOT stop an *absolute* `hdr.Name` escaping, validate the joined result is within `dst`); `extractall(` (Python zip/tar slip); PHP `include`/`require`/`fopen` with input, `php://filter`, `phar://`; download endpoints echoing a path param.
-**Confirm:** read `/etc/passwd` or app secrets; a bare `php://filter` *read* primitive escalates to **RCE with no upload and no writable file** via a PHP filter-chain (chained `iconv` conversions forge an in-memory PHP payload — Synacktiv 2022); the most-missed LFI escalation on PHP targets. For write, drop a file outside the intended dir (e.g. a build/SBOM tool that names an output file from an attacker-controlled manifest field — a target name like `../../../tmp/x` escaping via a path-join/`with_file_name`). Note the suffix/extension constraints honestly — arbitrary-*location* vs arbitrary-*content* matters for severity.
+**Confirm:** place a unique benign canary outside the intended base directory in a disposable environment, then prove unauthorized read or write of that canary. Treat system files, application secrets, PHP filter-chain code execution, and writes to executable locations as impact models unless the same consequence must be reproduced locally to establish severity. A PHP `php://filter` read primitive can sometimes reach code execution through chained `iconv` conversions without an upload or writable file; evaluate that architecture locally rather than erasing it from the impact analysis. Note suffix and extension constraints honestly: arbitrary location and arbitrary content are different capabilities.
 **Band:** $$–$$$$ (read of secrets / write→RCE = high).
 
 ## 12. Open redirect / URL-parse confusion
@@ -113,37 +116,37 @@ Payout bands are rough public-program medians; impact and program tier shift the
 ## 13. XSS & client-side
 **Where:** reflected (input echoed), stored (persisted then rendered), DOM (client sink).
 **Signals:** server: unescaped output — Blade `{!! !!}`, Django `|safe`/`mark_safe`, Jinja `|safe`, ERB `raw`/`html_safe`, React `dangerouslySetInnerHTML`, Angular `bypassSecurityTrust*`, Vue `v-html`. DOM: `innerHTML`/`outerHTML`/`document.write`/`insertAdjacentHTML`/`$(...).html()` (bundled **jQuery < 3.5.0** + `.html()`/`.append()` on attacker markup = CVE-2020-11022/11023 htmlPrefilter self-closing-tag DOM-XSS — grep the bundled version, a very common real-world root), `location`/`location.hash` → sink, `eval`/`setTimeout(str)`, `postMessage` handler without origin check, `window.name`. Other client-side: open `addEventListener('message')` with no `event.origin` check; DOM clobbering; `target=_blank` w/o `noopener` (reverse tabnabbing — low).
-**Confirm:** script execution in the victim's origin; show impact (session/CSRF-token theft, action). Self-XSS alone is out of scope on most programs.
+**Confirm:** demonstrate browser execution with uniquely tagged owned test data. Use a benign DOM marker or an authorized action on an owned comparison account; treat session material or another person's data as impact models, not proof artifacts.
 **Band:** $$ (reflected/DOM) – $$$ (stored, privileged context). Very scanner-camped; favor stored/DOM in complex SPAs where scanners are weak.
 
 ## 14. CSRF / SameSite / state-changing GET
 **Where:** state-changing requests without anti-CSRF protection.
 **Signals:** POST/PUT/DELETE with no CSRF token and `SameSite=None`/absent on the session cookie; state change via GET; CORS `Access-Control-Allow-Origin` reflecting the Origin **with** `Allow-Credentials:true` (CSRF-equivalent read). JSON endpoints that also accept `text/plain`/form content-types.
-**Confirm:** cross-site form/`fetch` performs the action as the victim. Modern frameworks + SameSite=Lax defaults kill most classic CSRF — check the actual cookie attributes before claiming it.
+**Confirm:** in a local environment, or `PROGRAM_HOSTED` when permitted, show that a cross-site form or request changes state in an account you own. Check actual cookie attributes and negative controls before claiming impact.
 **Band:** $–$$$ (impact-scaled).
 
 ## 15. Request smuggling / parser differentials / cache poisoning
 **Where:** front-end proxy + back-end disagree on request boundaries; caches keyed wrong.
 **Signals:** CL.TE/TE.CL/TE.TE handling differences; obscure headers reflected unkeyed into cached responses (web cache poisoning / cache deception); host-header injection; HTTP/2 downgrade desync. Mostly black-box, but the *config* (nginx/Apache/HAProxy/Varnish + app server) hints at it.
-**Confirm:** Burp HTTP Request Smuggler; demonstrate a poisoned/queued response affecting another user.
+**Confirm:** reproduce the parser disagreement across a controlled local proxy/backend chain and use distinct canary requests to demonstrate response misrouting or cache contamination. Do not involve another person's traffic or shared cache.
 **Band:** $$$–$$$$. Specialist class; requires an exact multi-hop parser/proxy model.
 
 ## 16. Race conditions / TOCTOU
 **Where:** check-then-act on shared state without a lock/transaction — balance/credit, coupon/voucher redemption, invite/seat limits, "claim once," idempotency gaps, file create-then-chmod.
 **Signals:** read-modify-write without DB transaction/row lock/atomic op; uniqueness enforced in app code not a DB constraint; `if exists … then create`.
-**Confirm:** fire N concurrent requests (Burp single-packet attack / Turbo Intruder) → limit exceeded once (double-spend, multi-redeem).
+**Confirm:** against a disposable local resource, send controlled concurrent requests and verify the authoritative state exceeds the invariant once. In `PROGRAM_HOSTED`, concurrency testing requires explicit permission and owned disposable state.
 **Band:** $$–$$$$ (financial = high). Require an authoritative state transition and captured effect.
 
 ## 17. Business-logic & workflow flaws
 **Where:** the rules of the app, not a code sink — price/quantity manipulation, negative amounts, currency rounding, skipping a workflow step, replaying a one-time action, parameter tampering on multi-step flows, coupon stacking, free-trial abuse with real impact.
 **Signals:** none greppable — read the domain. Ask "what invariant does this flow assume, and can I break it from the client?"
-**Confirm:** end-to-end demonstration of the broken invariant (got the thing for less/free, escalated, bypassed a gate).
+**Confirm:** demonstrate the broken invariant end to end using controlled local state or explicitly permitted owned program data; record the capability gained without creating financial loss or consuming another person's resources.
 **Band:** $$–$$$$. Pure human edge; zero scanner overlap.
 
 ## 18. GraphQL-specific
 **Where:** GraphQL endpoints.
 **Signals:** introspection enabled in prod; field-level authz missing (object-level checked, field not); batching/aliasing to bypass rate-limits or brute-force (100 aliased `login` in one request); deeply-nested query DoS; mutation IDOR; `__schema` leaking internal types; injection through resolvers.
-**Confirm:** introspect, then craft a query that reads/writes beyond your role, or a batched auth-bypass.
+**Confirm:** use owned comparison identities and uniquely tagged test records to show a field or mutation crosses the intended role boundary. Do not use batching for credential guessing or volumetric testing.
 **Band:** $$–$$$$.
 
 ## 19. Secrets exposure & weak cryptography
