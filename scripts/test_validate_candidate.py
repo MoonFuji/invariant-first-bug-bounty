@@ -404,6 +404,68 @@ def case_G_accept():
     return doc, "decision", 0
 
 
+TDNO = {
+    "claim": "the target does not own this security property",
+    "kind": "target_does_not_own_security_property",
+    "evidence": "the defective boundary is defined and enforced by a different project",
+    "resolution": "",
+    "resolution_source": "none",
+    "result": "confirmed",
+}
+
+
+def case_H_accept():
+    # target_does_not_own + confirmed -> KILL @ ownership (nobody eligible owns it here)
+    doc = baseline()
+    doc["threat_model"]["strongest_refutation"] = dict(TDNO)
+    doc["decision"] = {
+        "verdict": "KILL",
+        "gate": "ownership",
+        "failed_gates": ["ownership"],
+        "missing_evidence": [],
+        "reason": "no bounty-eligible owner for this boundary in the target",
+        "decided_at": "2026-08-08",
+    }
+    return doc, "decision", 0
+
+
+def case_I_accept():
+    # target_does_not_own + confirmed -> ROUTE_ELSEWHERE @ route (another project owns it)
+    doc = baseline()
+    doc["threat_model"]["strongest_refutation"] = dict(TDNO)
+    doc["route"]["owning_project"] = "other-org/other-repo"
+    doc["route"]["owner_evidence"] = "the defective boundary is implemented in other-org/other-repo"
+    doc["route"]["submission_target"] = "upstream advisory to other-org/other-repo"
+    doc["route"]["type"] = "upstream-advisory"
+    doc["route"]["owner_verified"] = True
+    doc["decision"] = {
+        "verdict": "ROUTE_ELSEWHERE",
+        "gate": "route",
+        "failed_gates": [],
+        "missing_evidence": [],
+        "reason": "another project owns the defective boundary",
+        "decided_at": "2026-08-08",
+    }
+    return doc, "decision", 0
+
+
+def case_J_reject():
+    # target_does_not_own + confirmed but KILL at the wrong gate
+    doc = baseline()
+    doc["threat_model"]["capability_before"] = "same capability"
+    doc["threat_model"]["capability_after"] = "same capability"
+    doc["threat_model"]["strongest_refutation"] = dict(TDNO)
+    doc["decision"] = {
+        "verdict": "KILL",
+        "gate": "capability_delta",
+        "failed_gates": ["capability_delta"],
+        "missing_evidence": [],
+        "reason": "killed at the wrong gate on purpose",
+        "decided_at": "2026-08-08",
+    }
+    return doc, "decision", 2
+
+
 CASES = [
     ("2  resolution attacks same boundary -> ACCEPT", case_2_accept, None),
     ("5  commits+issues+PRs evidenced -> ACCEPT", case_5_accept, None),
@@ -423,6 +485,9 @@ CASES = [
     ("C  github PR unavailable, prose only -> REJECT", case_C_reject, "attempted-search artifact"),
     ("D  github PR unavailable w/ artifact, distinct -> REJECT", case_D_reject, "channels covering"),
     ("F  terminal kind + KILL at wrong gate -> REJECT", case_F_reject, "requires decision.gate"),
+    ("H  target_does_not_own + KILL@ownership -> ACCEPT", case_H_accept, None),
+    ("I  target_does_not_own + ROUTE_ELSEWHERE@route -> ACCEPT", case_I_accept, None),
+    ("J  target_does_not_own + KILL@capability_delta -> REJECT", case_J_reject, "requires decision.gate"),
 ]
 
 
