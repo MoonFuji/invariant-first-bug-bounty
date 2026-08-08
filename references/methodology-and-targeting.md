@@ -152,6 +152,14 @@ Compare semantics, not titles or CWE labels.
 4. **Upstream truth:** GHSA/CVE, security advisories, issue/PR history, changelog, release notes, branches, and exact-line history.
 5. **Sibling implementations:** language SDKs, old APIs, forks, and mirror repos may show an existing fix or common backend ownership.
 
+For each required novelty source (`own_reports`, `program_disclosures`, `upstream_history`, and `recent_advisories`), store the query, check time, and exactly one result:
+
+- `checked`: a close match was opened; record its identifier, fingerprint, and comparison.
+- `no_match`: the source was searched and returned no relevant match.
+- `unavailable`: the source could not be searched; record why.
+
+Rank close matches across sources. Store one globally `closest_known_match`, compare its boundary, primitive, invariant, and effect separately, then write one candidate-level semantic delta. Do not treat four source-specific “different” claims as a substitute for selecting the strongest comparison.
+
 ### 4.3 Interpret results
 
 - Exact same boundary, primitive, invariant, and effect: probable coverage; `KILL` unless authoritative evidence proves separation.
@@ -159,6 +167,9 @@ Compare semantics, not titles or CWE labels.
 - No public match: record `private_duplicate_risk`; never call it novel solely from absence.
 - Fresh public advisory/famous fix: default risk `high` until a distinct invariant and unaffected fix path are proven.
 - Wrong project owns fix: `ROUTE_ELSEWHERE`, even if the product delegates to the vulnerable dependency.
+- Known matching root cause: classify `duplicate` and `KILL @ novelty`.
+- Incomplete or unavailable comparison evidence: classify `uncertain` and `HOLD @ novelty`.
+- Report-stage evidence supports a distinct root cause: classify `distinct`; this still does not reveal private duplicates.
 
 ## 5. Threat model and proof requirements
 
@@ -273,15 +284,15 @@ Fix the authoritative enforcement point and add the demonstrated regression cont
 
 ## 7. Terminal decisions
 
-After setting any verdict, require a complete trace:
+After setting any verdict, validate the evidence appropriate to where research ended:
 
 ```bash
 python scripts/validate-candidate.py --stage decision candidate.json
 ```
 
-- **REPORTABLE:** report validation passes with real artifacts.
-- **HOLD:** list concrete missing evidence; do not draft a report.
-- **KILL:** name the disproven gate or authoritative coverage.
+- **REPORTABLE @ reportability:** full trace, proof, route, and novelty validation passes with real artifacts.
+- **HOLD:** record the current gate and concrete missing evidence; do not invent current or downstream fields.
+- **KILL:** record the failed gate and evidence through that gate; do not continue only to fill later fields.
 - **ROUTE_ELSEWHERE:** name the correct owner and route evidence.
 - **NO_REPORTABLE_FINDING:** preserve the completed safe trace so future agents do not repeat it.
 
