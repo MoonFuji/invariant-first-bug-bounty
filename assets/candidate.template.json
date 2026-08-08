@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "candidate_id": "",
   "decision_history": [],
   "target": {
@@ -36,8 +36,14 @@
     "capability_before": "",
     "capability_after": "",
     "asset_owned_boundary": "",
-    "strongest_refutation": "",
-    "refutation_result": "unresolved"
+    "strongest_refutation": {
+      "claim": "",
+      "kind": "non_terminal",
+      "evidence": "",
+      "resolution": "",
+      "resolution_source": "none",
+      "result": "unresolved"
+    }
   },
   "proof": {
     "type": "none",
@@ -66,7 +72,8 @@
         "checked_at": "",
         "result": "unavailable",
         "reason": "",
-        "closest_match": null
+        "closest_match": null,
+        "evidence": {"method": "", "query": "", "artifact": ""}
       },
       {
         "source": "program_disclosures",
@@ -74,7 +81,8 @@
         "checked_at": "",
         "result": "unavailable",
         "reason": "",
-        "closest_match": null
+        "closest_match": null,
+        "evidence": {"method": "", "query": "", "artifact": ""}
       },
       {
         "source": "upstream_history",
@@ -82,7 +90,13 @@
         "checked_at": "",
         "result": "unavailable",
         "reason": "",
-        "closest_match": null
+        "closest_match": null,
+        "evidence": {"method": "", "query": "", "artifact": ""},
+        "channels": [
+          {"channel": "commits", "query": "", "result": "unavailable", "reason": "", "closest_match": null, "evidence": {"method": "git_log", "query": "", "artifact": ""}},
+          {"channel": "issues", "query": "", "result": "unavailable", "reason": "", "closest_match": null, "evidence": {"method": "github_issue_search", "query": "", "artifact": ""}},
+          {"channel": "pull_requests", "query": "", "result": "unavailable", "reason": "", "closest_match": null, "evidence": {"method": "github_pr_search", "query": "", "artifact": ""}}
+        ]
       },
       {
         "source": "recent_advisories",
@@ -90,7 +104,8 @@
         "checked_at": "",
         "result": "unavailable",
         "reason": "",
-        "closest_match": null
+        "closest_match": null,
+        "evidence": {"method": "", "query": "", "artifact": ""}
       }
     ],
     "closest_known_match": null,

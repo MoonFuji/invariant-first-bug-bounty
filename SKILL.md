@@ -45,6 +45,11 @@ python scripts/validate-candidate.py --stage model <hunt-dir>/candidate.json
 
 Fill `target` and `model` before broad recon. Update the same file as evidence changes; do not create a cleaner replacement that omits an earlier failed gate.
 
+**Schema 4 (v0.3.1) — two blocks are structured, not free text:**
+
+- `threat_model.strongest_refutation` is an object `{claim, kind, evidence, resolution, resolution_source, result}`. `kind` is `non_terminal` for an ordinary counter-argument, or a terminal kind: `owned_boundary_absent`, `capability_already_possessed`, `required_precondition_already_grants_effect`, `behavior_is_documented_contract`, `target_does_not_own_security_property`, `unreachable_under_supported_contract`. A terminal kind can never be `result: "refuted"` and can never reach `REPORTABLE` — if target-owned evidence genuinely defeats the objection, the honest `kind` is `non_terminal`. `REPORTABLE` additionally requires a non-empty `resolution` (the target-owned finding that defeats the claim), non-empty `evidence` (an independent artifact for it), and `resolution_source: "target_owned"`. A third party misusing the component is `resolution_source: "third_party"` and never clears the gate.
+- each `novelty.checks[]` carries `evidence: {method, query, artifact}`, required for every `checked`/`no_match` result once `classification` is `distinct`; the `upstream_history` check carries a `channels` array covering `commits`, `issues`, and `pull_requests`, each with its own executed-search `evidence`. A closest match whose `fingerprint` equals `root_cause_fingerprint`, or any match flagged `establishes_by_design`, blocks `distinct`/`REPORTABLE`. Legacy schema-3 candidates still validate at non-report stages; migrate a candidate to schema 4 before a REPORTABLE report.
+
 After setting any terminal verdict, validate the evidence accumulated through its terminal gate:
 
 ```bash
@@ -67,7 +72,7 @@ python scripts/validate-candidate.py --stage report <hunt-dir>/candidate.json
 2. **Build the security model.** Record principals, protected assets, trust boundaries, state stores, enforcement points, and one invariant. Read selectively until these are concrete; grep output is not a model.
 3. **Test relevance, then trace.** State a provisional security boundary and plausible new capability. If no meaningful capability change is possible, stop early. Otherwise follow untrusted input through validation/canonicalization, authorization, mutation/read, persistence or external effect, and at least one safe or parallel sibling.
 4. **Find the capability delta.** State what the test principal can do before and after the complete trace. Equal capabilities mean no security impact.
-5. **Attempt the strongest refutation.** Test the best benign explanation: intended sharing, attacker already controls the secret/config/peer, production hardening, safe caller contract, unreachable event shape, or downstream misuse. An unresolved refutation means `HOLD`; a confirmed refutation means `KILL` or honest downgrade.
+5. **Attempt the strongest refutation.** Test the best benign explanation: intended sharing, attacker already controls the secret/config/peer, production hardening, safe caller contract, unreachable event shape, or downstream misuse. An unresolved refutation means `HOLD`; a confirmed refutation means `KILL` or honest downgrade. **Terminal refutations cannot be waved past.** If the best benign explanation is any of these, the verdict is `KILL @ refutation` (or `KILL @ capability_delta`) regardless of how clean the reproduction is: (a) the input is developer/operator-controlled configuration at the owned boundary, not attacker input (the component is not the authorization policy); (b) the new capability requires a precondition the attacker does not already hold and the owned boundary does not grant; (c) the effect only appears when a *third party* misuses the component, so the fix is defense-in-depth in the dependency, not a vulnerability in the owned code. Finding an integrator who misuses the component does **not** move the owned boundary and does **not** refute (a)–(c). You may not set `refutation_result: "refuted"` on a terminal refutation to proceed to `REPORTABLE`; write it into `strongest_refutation` and stop.
 6. **Prove the exact boundary.** Use the proof type the destination accepts. Capture an observable side effect and negative controls, not only a status code, callback, code trace, or fabricated impossible input.
 7. **Route before reporting.** Verify that the destination owns the faulty code and accepts this proof class. A real bug in a dependency may require an upstream advisory rather than the product's bounty program.
 8. **Measure contestability.** Fingerprint the root cause as `boundary|primitive|invariant|effect`; record a query and outcome for your own reports, program disclosures, upstream history, and recent advisories. Select one globally closest known match and compare all four fingerprint axes.
@@ -113,9 +118,11 @@ When HackerOne MCP is available, begin with your own outcomes, then search the t
 2. `mcp__hackerone__GetProgramDisclosedReports` — inspect the program's disclosed component/class history.
 3. `mcp__hackerone__SearchDisclosedReports` — search the invariant, component, primitive, and effect across programs.
 4. `mcp__hackerone__GetHackerOneReportByID` — open close matches instead of comparing titles only.
-5. Check GHSA/CVE, issue/PR history, changelog, branches, releases, and `git log -p` for the exact enforcement path.
+5. Check GHSA/CVE, changelog, branches, releases, and `git log -p` for the exact enforcement path.
+6. **Search the owning repo's open AND closed issues/PRs — this is mandatory, not prose.** `git log` and advisories are not a substitute: a live PR or a closed "by-design" issue is invisible to them. Run and paste the actual output (commands + hit URLs) into the candidate, e.g. `gh pr list --repo <owner/repo> --state all --search "<class terms>"` and `gh search issues --repo <owner/repo> "<invariant/component terms>"`. A closed issue that requests the *opposite* of your fix (users wanting the current behavior) is by-design evidence and downgrades the finding.
+7. **Confirm the current default branch is still vulnerable** before claiming `distinct`: fetch the exact line on `main`/`master` (`gh api repos/<owner/repo>/contents/<path>`), or the finding may already be fixed upstream.
 
-For each source, persist the query, check time, and one result: `checked` with its closest match, `no_match`, or `unavailable` with a reason. Do not use an empty array to blur “not searched” into “no result.” Rank the retrieved matches, store one `closest_known_match`, compare its boundary, primitive, invariant, and effect, then set `novelty.classification` to `duplicate`, `distinct`, or `uncertain`.
+For each source, persist the query, check time, and one result: `checked` with its closest match, `no_match`, or `unavailable` with a reason. `no_match` on the issue/PR and current-branch sources (6–7) requires the pasted command/URL that produced it — a prose `no_match` without an executed-search artifact is treated as **not searched**, which forbids `distinct` and caps the verdict at `HOLD @ novelty`. Do not use an empty array to blur “not searched” into “no result.” Rank the retrieved matches, store one `closest_known_match`, compare its boundary, primitive, invariant, and effect, then set `novelty.classification` to `duplicate`, `distinct`, or `uncertain`.
 
 No public match is weak evidence, not proof of novelty; private duplicate pools remain invisible. A recent advisory or famous component raises contestability. `REPORTABLE` requires `distinct`; a known matching root cause is `KILL @ novelty`; unresolved comparison evidence is `HOLD @ novelty`.
 
@@ -144,6 +151,9 @@ Cross-model agreement is hypothesis prioritization, not validation. Models share
 | “The novelty window may close.” | Scarcity never lowers proof, ownership, or routing gates. |
 | “I will draft now and validate later.” | Stop. Report-stage validation must pass before drafting. |
 | “I can edit the candidate until it passes.” | Add evidence, not assertions. Preserve earlier failed gates and decision history in the same artifact. |
+| “But a real integrator forwards untrusted input into this.” | Their missing validation is the bug; the owned boundary treats this input as trusted config. Terminal refutation → `KILL`. |
+| “I marked the refutation `refuted`, so it's cleared.” | Only non-terminal refutations clear. Intended-usage / owned-boundary / attacker-already-holds-precondition refutations are `KILL`, not `refuted`. |
+| “I checked `git log`, so it's novel.” | `git log` misses live PRs and closed by-design issues. Run the issue/PR search + current-branch check and paste the output, or the verdict caps at `HOLD @ novelty`. |
 
 ## References and tools
 

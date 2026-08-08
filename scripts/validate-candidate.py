@@ -29,6 +29,37 @@ GATES = {
 }
 OPERATING_MODES = {"SOURCE_ONLY", "PROGRAM_HOSTED"}
 REFUTATION_RESULTS = {"refuted", "confirmed", "unresolved"}
+SUPPORTED_SCHEMA_VERSIONS = {3, 4}
+# A refutation's `kind`. Every kind except non_terminal invalidates the
+# candidate's own security model: it says the objection is not an ordinary
+# counter-argument but a statement that the target does not own the boundary.
+# Such a refutation cannot be "refuted" by pointing at a third party that
+# misuses the component; if it is genuinely defeated by target-owned evidence,
+# the honest kind is non_terminal.
+REFUTATION_KINDS = {
+    "non_terminal",
+    "owned_boundary_absent",
+    "capability_already_possessed",
+    "required_precondition_already_grants_effect",
+    "behavior_is_documented_contract",
+    "target_does_not_own_security_property",
+    "unreachable_under_supported_contract",
+}
+TERMINAL_REFUTATION_KINDS = REFUTATION_KINDS - {"non_terminal"}
+RESOLUTION_SOURCES = {"target_owned", "third_party", "none"}
+# Channels that make up the upstream-repository novelty search. git log alone
+# (the `commits` channel) is not a substitute for the issue/PR search.
+REQUIRED_UPSTREAM_CHANNELS = {"commits", "issues", "pull_requests"}
+UPSTREAM_CHANNELS = REQUIRED_UPSTREAM_CHANNELS | {"releases"}
+# Where a confirmed terminal refutation sends the candidate.
+TERMINAL_KIND_GATES = {
+    "owned_boundary_absent": {"relevance", "ownership"},
+    "capability_already_possessed": {"capability_delta"},
+    "required_precondition_already_grants_effect": {"capability_delta"},
+    "behavior_is_documented_contract": {"refutation"},
+    "target_does_not_own_security_property": {"ownership", "route"},
+    "unreachable_under_supported_contract": {"reachability"},
+}
 PROOF_TYPES = {
     "none",
     "live-two-identity",
@@ -108,9 +139,45 @@ def validate_fingerprint(value, path, errors):
         errors.append(f"{path} must contain four non-empty pipe-separated parts")
 
 
+def refutation_view(document):
+    """Normalize threat_model.strongest_refutation (legacy string or v4 object)."""
+    node = value_at(document, "threat_model.strongest_refutation")
+    if isinstance(node, dict):
+        return {
+            "is_object": True,
+            "claim": node.get("claim"),
+            "kind": node.get("kind"),
+            "evidence": node.get("evidence"),
+            "resolution": node.get("resolution"),
+            "resolution_source": node.get("resolution_source"),
+            "result": node.get("result"),
+        }
+    return {
+        "is_object": False,
+        "claim": node if isinstance(node, str) else None,
+        "kind": None,
+        "evidence": None,
+        "resolution": None,
+        "resolution_source": None,
+        "result": value_at(document, "threat_model.refutation_result"),
+    }
+
+
+def require_evidence(obj, path, errors):
+    """A novelty check/channel that was executed must carry an auditable artifact."""
+    ev = obj.get("evidence") if isinstance(obj, dict) else None
+    if not isinstance(ev, dict):
+        errors.append(f"{path}.evidence must be an object with method, query, artifact")
+        return
+    for key in ("method", "query", "artifact"):
+        value = ev.get(key)
+        if not isinstance(value, str) or not value.strip():
+            errors.append(f"{path}.evidence.{key} must be a non-empty string")
+
+
 def validate_common(document, errors):
-    if value_at(document, "schema_version") != 3:
-        errors.append("schema_version must be 3")
+    if value_at(document, "schema_version") not in SUPPORTED_SCHEMA_VERSIONS:
+        errors.append("schema_version must be 3 or 4")
 
     verdict = value_at(document, "decision.verdict")
     gate = value_at(document, "decision.gate")
@@ -230,12 +297,39 @@ def validate_capability_fields(document, errors):
 
 def validate_refutation_fields(document, errors):
     require_list(document, "trace.sibling_paths", errors, nonempty=True)
-    require_text(document, "threat_model.strongest_refutation", errors)
-    result = value_at(document, "threat_model.refutation_result")
-    if result not in REFUTATION_RESULTS:
+    view = refutation_view(document)
+    node = value_at(document, "threat_model.strongest_refutation")
+    if view["is_object"]:
+        if not isinstance(view["claim"], str) or not view["claim"].strip():
+            errors.append("threat_model.strongest_refutation.claim must be a non-empty string")
+        if view["kind"] not in REFUTATION_KINDS:
+            errors.append(
+                "threat_model.strongest_refutation.kind must be one of "
+                + ", ".join(sorted(REFUTATION_KINDS))
+            )
+        source = view["resolution_source"]
+        if source is not None and source not in RESOLUTION_SOURCES:
+            errors.append(
+                "threat_model.strongest_refutation.resolution_source must be one of "
+                + ", ".join(sorted(RESOLUTION_SOURCES))
+            )
+        # A terminal refutation asserts the target does not own the boundary.
+        # It cannot be marked refuted; a third party misusing the component does
+        # not move the owned boundary. If target-owned evidence genuinely defeats
+        # the objection, the honest kind is non_terminal.
+        if view["kind"] in TERMINAL_REFUTATION_KINDS and view["result"] == "refuted":
+            errors.append(
+                "a terminal refutation cannot be marked refuted; downstream misuse does "
+                "not move the owned boundary (use kind non_terminal only when target-owned "
+                "evidence defeats the objection)"
+            )
+    elif not isinstance(node, str) or not node.strip():
         errors.append(
-            "threat_model.refutation_result must be one of "
-            + ", ".join(sorted(REFUTATION_RESULTS))
+            "threat_model.strongest_refutation must be a non-empty string or a structured object"
+        )
+    if view["result"] not in REFUTATION_RESULTS:
+        errors.append(
+            "threat_model refutation result must be one of " + ", ".join(sorted(REFUTATION_RESULTS))
         )
 
 
@@ -391,6 +485,85 @@ def validate_novelty_fields(document, errors):
     elif closest is not None:
         errors.append("novelty.closest_known_match must be null when no check found a match")
 
+    # Collect every closest_match (check-level and upstream channel-level) and
+    # validate upstream channel shape.
+    matches = []
+    for index, check in enumerate(checks):
+        if not isinstance(check, dict):
+            continue
+        cpath = f"novelty.checks[{index}]"
+        if isinstance(check.get("closest_match"), dict):
+            matches.append((cpath, check["closest_match"]))
+        channels = check.get("channels")
+        if channels is None:
+            continue
+        if not isinstance(channels, list):
+            errors.append(f"{cpath}.channels must be an array")
+            continue
+        for cidx, channel in enumerate(channels):
+            chpath = f"{cpath}.channels[{cidx}]"
+            if not isinstance(channel, dict):
+                errors.append(f"{chpath} must be an object")
+                continue
+            if channel.get("channel") not in UPSTREAM_CHANNELS:
+                errors.append(
+                    f"{chpath}.channel must be one of " + ", ".join(sorted(UPSTREAM_CHANNELS))
+                )
+            if channel.get("result") not in NOVELTY_CHECK_RESULTS:
+                errors.append(f"{chpath}.result is invalid")
+            if isinstance(channel.get("closest_match"), dict):
+                matches.append((chpath, channel["closest_match"]))
+
+    # `distinct` is the claim that cost real submissions when asserted without an
+    # executed upstream issue/PR search. Require auditable search artifacts.
+    if classification == "distinct":
+        for index, check in enumerate(checks):
+            if isinstance(check, dict) and check.get("result") in {"checked", "no_match"}:
+                require_evidence(check, f"novelty.checks[{index}]", errors)
+
+        upstream = next(
+            (c for c in checks if isinstance(c, dict) and c.get("source") == "upstream_history"),
+            None,
+        )
+        covered = set()
+        if isinstance(upstream, dict) and isinstance(upstream.get("channels"), list):
+            for channel in upstream["channels"]:
+                if not isinstance(channel, dict):
+                    continue
+                name = channel.get("channel")
+                if name not in UPSTREAM_CHANNELS:
+                    continue
+                if channel.get("result") in {"checked", "no_match"}:
+                    require_evidence(
+                        channel, "novelty.checks(upstream_history).channels", errors
+                    )
+                    covered.add(name)
+                elif channel.get("result") == "unavailable":
+                    reason = channel.get("reason")
+                    if not isinstance(reason, str) or not reason.strip():
+                        errors.append(
+                            "novelty upstream channel marked unavailable requires a reason"
+                        )
+                    covered.add(name)
+        if not REQUIRED_UPSTREAM_CHANNELS.issubset(covered):
+            errors.append(
+                "distinct requires upstream_history channels covering commits, issues, "
+                "pull_requests with search artifacts (git log alone is insufficient)"
+            )
+
+        root_fp = value_at(document, "novelty.root_cause_fingerprint")
+        for path, match in matches:
+            if isinstance(root_fp, str) and match.get("fingerprint") == root_fp:
+                errors.append(
+                    f"{path} closest_match fingerprint identical to root_cause_fingerprint "
+                    "forbids distinct (classify as duplicate)"
+                )
+            if match.get("establishes_by_design") is True:
+                errors.append(
+                    f"{path} establishes_by_design; feed it into the refutation "
+                    "(KILL @ refutation) rather than a distinct or REPORTABLE finding"
+                )
+
 
 def validate_through(document, errors, gate):
     validate_common(document, errors)
@@ -495,10 +668,8 @@ def validate_decision(document, errors):
             if gate == "relevance":
                 validate_relevance_fields(document, errors)
             require_equal_capabilities(document, errors, "KILL")
-        if gate == "refutation" and value_at(
-            document, "threat_model.refutation_result"
-        ) != "confirmed":
-            errors.append("KILL at refutation requires refutation_result confirmed")
+        if gate == "refutation" and refutation_view(document)["result"] != "confirmed":
+            errors.append("KILL at refutation requires refutation result confirmed")
         if gate == "novelty" and value_at(
             document, "novelty.classification"
         ) != "duplicate":
@@ -508,13 +679,42 @@ def validate_decision(document, errors):
         ) != "distinct":
             errors.append("KILL at reportability requires novelty.classification distinct")
     elif verdict == "NO_REPORTABLE_FINDING":
-        if value_at(document, "threat_model.refutation_result") != "confirmed":
-            errors.append("NO_REPORTABLE_FINDING requires refutation_result confirmed")
+        if refutation_view(document)["result"] != "confirmed":
+            errors.append("NO_REPORTABLE_FINDING requires refutation result confirmed")
         require_equal_capabilities(document, errors, "NO_REPORTABLE_FINDING")
     elif verdict == "REPORTABLE":
         require_capability_delta(document, errors)
-        if value_at(document, "threat_model.refutation_result") != "refuted":
-            errors.append("REPORTABLE requires refutation_result refuted")
+        view = refutation_view(document)
+        if not view["is_object"]:
+            errors.append(
+                "REPORTABLE requires a structured strongest_refutation object "
+                "(claim, kind, evidence, resolution, resolution_source, result)"
+            )
+        else:
+            if view["result"] != "refuted":
+                errors.append("REPORTABLE requires strongest_refutation.result refuted")
+            if view["kind"] in TERMINAL_REFUTATION_KINDS:
+                gates = ", ".join(sorted(TERMINAL_KIND_GATES.get(view["kind"], set())))
+                errors.append(
+                    f"terminal refutation kind '{view['kind']}' cannot be REPORTABLE; "
+                    f"KILL at {gates}"
+                )
+            if not isinstance(view["resolution"], str) or not view["resolution"].strip():
+                errors.append(
+                    "REPORTABLE requires strongest_refutation.resolution stating the "
+                    "target-owned finding that defeats the claim"
+                )
+            if not isinstance(view["evidence"], str) or not view["evidence"].strip():
+                errors.append(
+                    "REPORTABLE requires strongest_refutation.evidence, an independent "
+                    "artifact backing the resolution"
+                )
+            if view["resolution_source"] != "target_owned":
+                errors.append(
+                    "REPORTABLE requires strongest_refutation.resolution_source target_owned; "
+                    "a third_party or none resolution cannot defeat a refutation about the "
+                    "target's own boundary"
+                )
         if value_at(document, "novelty.classification") != "distinct":
             errors.append("REPORTABLE requires novelty.classification distinct")
         if value_at(document, "novelty.private_duplicate_risk") == "unknown":
