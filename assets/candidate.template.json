@@ -111,7 +111,14 @@
     "closest_known_match": null,
     "semantic_delta": "",
     "classification": "uncertain",
-    "private_duplicate_risk": "unknown"
+    "private_duplicate_risk": "unknown",
+    "current_upstream_state": {
+      "ref": "",
+      "checked_at": "",
+      "path": "",
+      "result": "unavailable",
+      "evidence": {"method": "", "query": "", "artifact": ""}
+    }
   },
   "decision": {
     "verdict": "HOLD",

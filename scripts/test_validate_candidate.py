@@ -152,6 +152,13 @@ def baseline():
             "semantic_delta": "new root cause",
             "classification": "distinct",
             "private_duplicate_risk": "medium",
+            "current_upstream_state": {
+                "ref": "main@abc123",
+                "checked_at": "2026-08-08",
+                "path": "lib/x.rb:1",
+                "result": "vulnerable",
+                "evidence": evidence("gh_api_contents", "https://github.com/o/r/blob/main/lib/x.rb#L1"),
+            },
         },
         "decision": {
             "verdict": "REPORTABLE",
@@ -299,6 +306,104 @@ def legacy_backward_compat_accept():
 
 
 # (label, builder, required stderr substring for the REJECT reason)
+def case_A_reject():
+    # stale checkout vulnerable, but current main is fixed -> distinct rejected
+    doc = baseline()
+    doc["novelty"]["current_upstream_state"]["result"] = "fixed"
+    return doc, "report", 2
+
+
+def case_B_accept():
+    # current main still vulnerable with a fetch artifact -> distinct accepted
+    return baseline(), "report", 0
+
+
+def case_C_reject():
+    # GitHub PR channel unavailable with only a prose reason (no attempt artifact)
+    doc = baseline()
+    for check in doc["novelty"]["checks"]:
+        if check["source"] == "upstream_history":
+            channels = upstream_channels(("no_match", "no_match", "unavailable"))
+            channels[2].pop("evidence", None)
+            channels[2]["reason"] = "PR search unavailable"
+            check["channels"] = channels
+    return doc, "report", 2
+
+
+def case_D_reject():
+    # GitHub PR search attempted, tool failed, artifact present, but still claims distinct
+    doc = baseline()
+    for check in doc["novelty"]["checks"]:
+        if check["source"] == "upstream_history":
+            channels = upstream_channels(("no_match", "no_match", "unavailable"))
+            channels[2]["reason"] = "GitHub API returned 403"
+            channels[2]["evidence"] = evidence("gh_pr_search", "/tmp/gh-pr-403.txt")
+            check["channels"] = channels
+    return doc, "report", 2
+
+
+def case_E_accept():
+    # non-GitHub upstream with no PR concept -> unavailable channels accepted
+    doc = baseline()
+    doc["target"]["repository"] = "git.launchpad.net/o/r"
+    doc["route"]["owning_project"] = "o/r"
+    for check in doc["novelty"]["checks"]:
+        if check["source"] == "upstream_history":
+            channels = upstream_channels(("no_match", "unavailable", "unavailable"))
+            channels[1]["reason"] = "no issue tracker on this forge"
+            channels[1].pop("evidence", None)
+            channels[2]["reason"] = "no pull-request concept on this forge"
+            channels[2].pop("evidence", None)
+            check["channels"] = channels
+    return doc, "report", 0
+
+
+def case_F_reject():
+    # confirmed terminal kind but KILL at the wrong gate
+    doc = baseline()
+    doc["threat_model"]["strongest_refutation"] = {
+        "claim": "the caller already holds this capability",
+        "kind": "capability_already_possessed",
+        "evidence": "the attacker principal already has the grant",
+        "resolution": "",
+        "resolution_source": "none",
+        "result": "confirmed",
+    }
+    doc["decision"] = {
+        "verdict": "KILL",
+        "gate": "refutation",
+        "failed_gates": ["refutation"],
+        "missing_evidence": [],
+        "reason": "kind is capability_already_possessed",
+        "decided_at": "2026-08-08",
+    }
+    return doc, "decision", 2
+
+
+def case_G_accept():
+    # confirmed terminal kind, KILL at its mapped gate
+    doc = baseline()
+    doc["threat_model"]["capability_before"] = "can already do X"
+    doc["threat_model"]["capability_after"] = "can already do X"
+    doc["threat_model"]["strongest_refutation"] = {
+        "claim": "the caller already holds this capability",
+        "kind": "capability_already_possessed",
+        "evidence": "the attacker principal already has the grant",
+        "resolution": "",
+        "resolution_source": "none",
+        "result": "confirmed",
+    }
+    doc["decision"] = {
+        "verdict": "KILL",
+        "gate": "capability_delta",
+        "failed_gates": ["capability_delta"],
+        "missing_evidence": [],
+        "reason": "capability unchanged; caller already possessed it",
+        "decided_at": "2026-08-08",
+    }
+    return doc, "decision", 0
+
+
 CASES = [
     ("2  resolution attacks same boundary -> ACCEPT", case_2_accept, None),
     ("5  commits+issues+PRs evidenced -> ACCEPT", case_5_accept, None),
@@ -311,6 +416,13 @@ CASES = [
     ("4  distinct via git log only, no issue/PR -> REJECT", case_4_reject, "channels covering"),
     ("6  checked match == root fingerprint yet distinct -> REJECT", case_6_reject, "identical to root_cause_fingerprint"),
     ("7  by-design issue but still REPORTABLE -> REJECT", case_7_reject, "establishes_by_design"),
+    ("B  current main vulnerable + fetch artifact -> ACCEPT", case_B_accept, None),
+    ("E  non-github upstream, unavailable PR/issues -> ACCEPT", case_E_accept, None),
+    ("G  terminal kind + KILL at mapped gate -> ACCEPT", case_G_accept, None),
+    ("A  stale checkout, current main fixed -> REJECT", case_A_reject, "fixed forbids distinct"),
+    ("C  github PR unavailable, prose only -> REJECT", case_C_reject, "attempted-search artifact"),
+    ("D  github PR unavailable w/ artifact, distinct -> REJECT", case_D_reject, "channels covering"),
+    ("F  terminal kind + KILL at wrong gate -> REJECT", case_F_reject, "requires decision.gate"),
 ]
 
 

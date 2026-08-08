@@ -31,8 +31,23 @@ gate's intended meaning:
   at non-report stages; a candidate must be migrated to schema 4 to pass
   `--stage report`.
 
+Follow-up enforcement (closing three "field satisfiable without the work" gaps
+found in review of the first cut):
+
+- `novelty.current_upstream_state` makes the "current default branch still
+  vulnerable" check mechanical. `distinct` requires `result: "vulnerable"` with
+  a fetch artifact; `fixed` forbids `distinct`; `unavailable` caps at
+  `HOLD @ novelty`. Previously this was prose only.
+- On a `github.com/` repository, `issues` and `pull_requests` channels marked
+  `unavailable` must carry an attempted-search artifact and never count as
+  coverage for `distinct`, so "unavailable" can no longer stand in for "didn't
+  search." Non-GitHub upstreams keep the generic `unavailable` semantics.
+- A confirmed terminal refutation must land at the gate its `kind` implies
+  (`TERMINAL_KIND_GATES`), not merely avoid `REPORTABLE`.
+
 ### Tests
 
-`scripts/test_validate_candidate.py` reproduces both failure shapes as
-acceptance cases (7 reject / 4 accept, plus a legacy backward-compat case) and
-asserts each rejection cites its intended rule.
+`scripts/test_validate_candidate.py` reproduces every failure shape as an
+acceptance case (18 total: reject cases assert the intended rule, plus accept,
+legacy backward-compat, and the reviewer's A–G current-branch / GitHub-channel /
+terminal-gate scenarios).
