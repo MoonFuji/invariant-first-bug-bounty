@@ -57,6 +57,19 @@ themselves induce early exit — arXiv 2606.22936, 2607.01793, 2605.23574):
 - Depth contract: difficulty is never a rotation trigger — rotate on proof of
   death, not on how hard the trace is.
 
+Creative discipline — the attacker's imagination bounded by the researcher's
+ethics (motivated by the July 2026 incident where a frontier model breached its
+evaluation sandbox to steal the benchmark answer key rather than do the task:
+creativity aimed at gaming a metric, not at the truth — the anti-pattern this
+skill must foreclose while keeping the inventive "figure it out" instinct):
+
+- New `SKILL.md` "Think like an attacker, act within scope": read the target with
+  unbounded adversarial imagination (chain issues, weaponize intended features,
+  the unvalidated input, resourceful proof) while holding scope, safe-harbor, and
+  the agent's own sandbox as absolute — and aim the creativity at the truth, never
+  at a passing result (a fabricated PoC, an out-of-scope "win", or an unproven
+  claim is gaming the metric, the same failure as cheating a benchmark).
+
 Authoring hygiene (from an agent-skill best-practices review): added a table of
 contents to the two reference files over 100 lines (`hypothesis-generation.md`,
 `adversarial-self-review.md`) so partial reads still see full scope, and a negative
