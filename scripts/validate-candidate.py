@@ -691,31 +691,49 @@ def validate_commit(document, errors):
     if not isinstance(commit, dict):
         errors.append(
             "schema 5 requires a commit block persisting the pre-hunt commitment "
-            "(mode, invariant, expected_delta, committed_at)"
+            "(mode and committed_at always; invariant once one is promoted)"
         )
         return
-    for field in ("mode", "invariant", "expected_delta", "committed_at"):
+    # mode + committed_at are fixed before recon and always required.
+    for field in ("mode", "committed_at"):
         value = commit.get(field)
         if not isinstance(value, str) or not value.strip():
             errors.append(f"commit.{field} must be a non-empty string (persist it before recon)")
-    committed_invariant = commit.get("invariant")
-    current_invariant = value_at(document, "model.security_invariant")
-    history = value_at(document, "decision_history")
-    superseded = commit.get("superseded_by")
+
+    # A silent operating-mode switch is a scope / safe-harbor risk -- diff it (this is what
+    # earns commit.mode its place rather than duplicating target.operating_mode as dead data).
+    committed_mode = commit.get("mode")
+    current_mode = value_at(document, "target.operating_mode")
     if (
-        isinstance(committed_invariant, str)
-        and committed_invariant.strip()
-        and isinstance(current_invariant, str)
-        and current_invariant.strip()
-        and committed_invariant.strip() != current_invariant.strip()
-        and not (isinstance(history, list) and history)
-        and not (isinstance(superseded, str) and superseded.strip())
+        isinstance(committed_mode, str) and committed_mode.strip()
+        and isinstance(current_mode, str) and current_mode.strip()
+        and committed_mode.strip() != current_mode.strip()
     ):
         errors.append(
-            "the committed invariant differs from model.security_invariant but no reframe was "
-            "recorded; append to decision_history or set commit.superseded_by -- a silent reframe "
-            "defeats the commitment device"
+            "commit.mode differs from target.operating_mode -- a silent operating-mode switch; "
+            "restore the committed mode or record why it changed"
         )
+
+    # The invariant is committed only at promotion (workflow step 3); an early terminal that dies
+    # before a model exists (e.g. KILL @ scope, the most common outcome) does not owe one yet.
+    current_invariant = value_at(document, "model.security_invariant")
+    model_built = isinstance(current_invariant, str) and bool(current_invariant.strip())
+    if model_built:
+        invariant = commit.get("invariant")
+        if not isinstance(invariant, str) or not invariant.strip():
+            errors.append(
+                "commit.invariant must be a non-empty string once an invariant is committed "
+                "(model.security_invariant is set)"
+            )
+        elif invariant.strip() != current_invariant.strip():
+            superseded = commit.get("superseded_by")
+            if not (isinstance(superseded, str) and superseded.strip()):
+                errors.append(
+                    "the committed invariant differs from model.security_invariant but the reframe "
+                    "is not recorded in commit.superseded_by; a silent switch to a different invariant "
+                    "defeats the commitment device (a decision_history verdict change is not an "
+                    "invariant-reframe record)"
+                )
 
 
 def require_intent_corpus_present(document, errors):
@@ -773,8 +791,8 @@ def validate_saturation_for_report(document, errors):
     sat = value_at(document, "target.saturation")
     if not isinstance(sat, dict):
         errors.append(
-            "schema 5 REPORTABLE requires target.saturation (reports_last_90d, discloses_reports, "
-            "hot_cluster); duplicates are decided at target selection, so assess dedup visibility"
+            "schema 5 REPORTABLE requires a target.saturation assessment carrying discloses_reports "
+            "(can you dedup against the program's public reports?); duplicates are decided at target selection"
         )
         return
     discloses = sat.get("discloses_reports")
@@ -784,11 +802,11 @@ def validate_saturation_for_report(document, errors):
             "program's public reports, or is the private pool invisible?"
         )
     risk = value_at(document, "novelty.private_duplicate_risk")
-    if discloses is False and risk != "high":
+    if discloses is False and risk == "low":
         errors.append(
-            "a non-disclosing program gives zero public dedup signal, so "
-            "target.saturation.discloses_reports false forces private_duplicate_risk high; every "
-            "mined duplicate was on a swarmed or non-disclosing program"
+            "a non-disclosing program gives zero public dedup signal, so a low private_duplicate_risk "
+            "cannot be claimed -- assess it medium or high; a bespoke, low-collision finding may still "
+            "be medium, but never low where you cannot dedup at all"
         )
 
 
