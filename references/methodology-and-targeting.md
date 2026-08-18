@@ -184,6 +184,8 @@ Write four sentences:
 
 If sentence 4 equals sentence 1, there is no demonstrated security gain.
 
+For every proposed attacker route, name the target-supported ingress and the evidence that the actor can reach it. “Compromised storage,” “leaked credential,” “over-permissioned backend,” and “MITM under weak configuration” are scenario assumptions, not source provenance. Determine whether the program treats that component as adversarial, whether a less-trusted principal can influence it through an owned path, and what authority the assumed compromise already grants.
+
 ### 5.2 Strongest refutation
 
 Actively test the explanation most likely to kill the report:
@@ -195,6 +197,9 @@ Actively test the explanation most likely to kill the report:
 - A safe authoritative layer rechecks before state changes.
 - The dangerous behavior requires downstream misuse or a caller already violating the API contract.
 - The project explicitly assigns the boundary to the deployer/caller.
+- Target-authored policy, documentation, README text, or prior issue history declares the relevant input, peer, or behavior trusted or by design.
+
+Quote the strongest target-authored statement and resolve its exact scope against the claimed effect. A statement that trusts source-generated SQL on the destination does not automatically settle whether the source may read the migration client's filesystem; conversely, a contract that clearly assigns the entire peer or protocol to the caller is terminal counterevidence. Do not paraphrase a narrow statement into either a broader exemption or a narrower one.
 
 Record one of:
 
@@ -206,6 +211,28 @@ Record one of:
 
 Proof must exercise the exact load-bearing behavior and capture an observable effect.
 
+Keep three proof levels separate:
+
+1. **Primitive fidelity:** a compatible parser, client, runtime, or helper containing copied target lines demonstrates that the underlying mechanism can produce the effect. This supports a hypothesis but does not establish the target path.
+2. **Executable fidelity:** the exact pinned/shipped executable is invoked through the target's real command/configuration builder and produces the effect. Record the version, generated command or config, observable artifact, negative control, and exit status.
+3. **Boundary fidelity:** the actor allowed by the program can supply the exact representation through the product-facing interface, every validation/storage/serialization step preserves the load-bearing bytes or semantics, and the effect crosses a target-owned boundary.
+
+Clear the level required by the claimed destination and impact. Do not use primitive fidelity to claim executable fidelity, or executable fidelity to claim a managed-service boundary. Product documentation showing that customers provide a hostname, username, URI, schema, archive, or similar field is a surface anchor only; it does not prove that control characters, encodings, alternate representations, or other load-bearing values survive the control plane.
+
+For a managed product backed by public source, trace this carrier explicitly:
+
+```text
+customer-controlled representation
+  → public API/CLI/console contract
+  → request validation and normalization
+  → persistence or task payload
+  → serialization / environment / generated config
+  → shipped executable invocation
+  → target-owned observable effect
+```
+
+If any load-bearing transition is unavailable, use `HOLD @ reachability` or `HOLD @ proof` and name it. Do not fill the gap with an assumption about an internal deployment.
+
 Acceptable proof varies by route:
 
 - Hosted app/API: in `PROGRAM_HOSTED`, two owned identities or an owned instance, planted marker/state change, and anonymous/nonexistent controls when explicitly permitted and relevant.
@@ -216,6 +243,10 @@ Acceptable proof varies by route:
 - AI/MCP: authentic reachable event and consequential tool effect; synthetic service/model output alone proves only unsafe handling of fabricated input.
 
 Every proof needs a negative control that would fail if the claimed root cause were wrong.
+
+Trace each claimed effect independently. A write path, copy path, cleanup path, and delete path may contain the same join or sink while consuming values from different sources. Do not transfer taint, reachability, or capability from one sibling to another without its own source-to-effect trace.
+
+A nonzero process exit does not erase an effect that completed and was independently captured before the failure. Preserve the exit code and ordering evidence, explain the fixture limitation, and scope the claim to the completed effect. Do not call a partial protocol fixture a successful end-to-end product workflow.
 
 ## 6. Routing, severity, and report structure
 
@@ -239,6 +270,8 @@ Score the reproduced capability, not the bug class or theoretical maximum.
 - Use confidentiality/integrity/availability effects actually captured.
 - Treat races, victim action, deployment configuration, and unusual preconditions as complexity/requirements.
 - Do not raise severity because a stronger unproven chain might exist.
+- Separate impact statements into `demonstrated` and `conditional`. A local canary can demonstrate the executable's file-read capability; it does not by itself demonstrate managed-host reachability, cloud credentials, cross-tenant data, or another target-owned sensitive asset. Conditional consequences may guide the next proof, but they do not determine the submitted severity.
+- Separate attacker control over a path from permission to modify that path. Record the runtime UID/GID, container or sandbox boundary, filesystem permissions, capabilities, and the exact execution trigger before claiming arbitrary write, privileged overwrite, or RCE. A constrained privileged subprocess elevates only that subprocess and its accepted arguments; it does not retroactively elevate earlier file operations.
 
 ### 6.3 Report structure
 
@@ -276,7 +309,7 @@ Root-cause fingerprint, searches performed, close matches, and the exact differe
 Only the reproduced consequence.
 
 ## Limitations
-What was not tested, deployment assumptions, and residual private-duplicate risk.
+What was not tested, unresolved input-carrier or deployment assumptions, process failures after the captured effect, and residual private-duplicate risk.
 
 ## Remediation
 Fix the authoritative enforcement point and add the demonstrated regression control.
