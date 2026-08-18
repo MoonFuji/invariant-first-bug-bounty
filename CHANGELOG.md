@@ -1,9 +1,29 @@
 # Changelog
 
-## v0.4.1 — self-review guardrails
+## v0.4.1 — discipline hardening and self-review guardrails
 
-Documentation-only refinements to the v0.4.0 self-review and ideation steps; no
-validator or schema change (the suite is unchanged at 27/27).
+Documentation-only refinements to the v0.4.0 workflow; no validator or schema
+change (the suite is unchanged at 27/27).
+
+Discipline enforcement (agents are not disciplined by default; these raise
+compliance the way the persuasion-principles research predicts — commitment,
+self-recognition, and worked examples):
+
+- `SKILL.md` **Commit before you hunt**: announce the operating mode, the one
+  invariant, and the expected capability delta before recon, and the terminal
+  verdict + gate at the end — a spoken commitment makes a silent slide from HOLD
+  toward REPORTABLE visible.
+- `SKILL.md` **Red flags — STOP**: names the symptoms of an about-to-fail moment
+  (drafting before the validator passes, claiming unreproduced impact, reaching
+  for a substitute client, editing a field to pass the gate, submitting under
+  rent/sunk-cost pressure) so the agent catches itself, complementing the reactive
+  rationalizations table.
+- New `references/worked-examples.md`: two candidates walked to a terminal verdict
+  with decisive fields — a subtle `KILL @ refutation` (owned boundary vs.
+  integrator misuse) and a clean `REPORTABLE` (cross-tenant read) — because a
+  concrete pattern teaches the discipline better than rules alone.
+
+Self-review guardrails:
 
 - `references/adversarial-self-review.md`: **symmetry rule** — the self-review must
   not become a false-negative engine. Every downgrade / `UNCERTAIN` / `DISPROVED`
