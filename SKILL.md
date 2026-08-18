@@ -12,6 +12,10 @@ Model one security invariant before searching for violations. Trace it through t
 
 The task does not require a finding. `HOLD`, `KILL`, `ROUTE_ELSEWHERE`, and `NO_REPORTABLE_FINDING` are successful outcomes when supported by evidence.
 
+## Commit before you hunt
+
+State out loud, and write into `candidate.json`, three things before recon: the operating mode, the one security invariant you will test, and the specific capability delta you expect an attacker to gain. State the terminal verdict and `decision.gate` out loud at the end. Announcing them commits you: an abandoned invariant or a silent slide from `HOLD` toward `REPORTABLE` becomes visible instead of quiet. You do not get to change a declared verdict without appending to `decision_history` and saying why.
+
 ## Operating mode
 
 Declare one mode before investigation. Store it in `target.operating_mode` and record its authorization basis in `target.scope_evidence`:
@@ -150,6 +154,21 @@ Cross-model agreement is hypothesis prioritization, not validation. Models share
 
 `decision.gate` records where research ended: `scope`, `route`, `model`, `relevance`, `reachability`, `capability_delta`, `refutation`, `proof`, `ownership`, `novelty`, or `reportability`. `HOLD` requires completed prerequisite evidence plus the specific missing item. `KILL` requires evidence through the failed gate, not fabricated downstream fields. `ROUTE_ELSEWHERE` requires verified ownership and routing evidence. Full trace, proof, route, and novelty evidence remain mandatory for `REPORTABLE`; a complete trace and refutation remain mandatory for `NO_REPORTABLE_FINDING`.
 
+## Red flags — STOP
+
+These are the symptoms of an about-to-fail moment. The instant you notice yourself doing any of them, stop and return to the named gate — the urge itself is the signal that the discipline is being skipped:
+
+- Opening a report draft or writing a summary before `--stage report` exited 0. → run the validator first; a nonzero exit forbids drafting.
+- Naming an impact you have not reproduced — cloud secrets, cross-tenant data, RCE, "P1". → claim only the captured effect at the `capability_delta` gate.
+- Reaching for a substitute client, copied lines, or a helper "because the real path is fiddly." → that is primitive evidence only; the `proof` gate needs the exact shipped executable path.
+- Editing a `candidate.json` field to make the validator pass instead of collecting the evidence it names. → add evidence, not assertions; preserve the failed gate.
+- Marking a refutation `refuted`, or relabeling a terminal kind as `non_terminal`, so you can proceed. → write it into `strongest_refutation` and take the `KILL`.
+- Calling a repository clean without the five Depth-contract records. → you have skimmed, not looked; produce the entrypoint, invariant, trace, sibling, and defeated counterexample.
+- Treating another model's agreement, a CVE precedent, a famous component, or a closing novelty window as if it cleared a gate. → none of them clear a gate; only an independent artifact does.
+- Feeling the pull to submit *because* rent is due, hours are sunk, or the program "clearly wants a finding." → pressure is not evidence; it is the exact condition under which the gates must hold.
+
+If you cannot proceed without doing one of these, the honest verdict is `HOLD` with the missing evidence named — that is a success, not a failure.
+
 ## Rationalizations to reject
 
 | Rationalization | Required response |
@@ -183,6 +202,7 @@ Cross-model agreement is hypothesis prioritization, not validation. Models share
 | `references/methodology-and-targeting.md` | Target/route selection, invariant modeling, contestability, proof standards, CVSS, report template |
 | `references/hypothesis-generation.md` | Large/unfamiliar target where the highest-value invariant is not obvious — attack modes, pre-mortem, TRIZ, adaptive-attacker ideation |
 | `references/adversarial-self-review.md` | Before proof — Advocate (8 FP patterns) / Cold-verifier / Causal-challenger role rotation against your own finding |
+| `references/worked-examples.md` | Need a concrete pattern — two candidates walked to a terminal verdict (a subtle `KILL @ refutation`, a clean `REPORTABLE`) with decisive fields |
 | `references/bug-class-taxonomy.md` | After choosing an invariant, for relevant source/sink and confirmation patterns |
 | `references/grey-box-dynamic-testing.md` | Live instance, two-account identity diff, control tests, safe-harbor proof |
 | `references/emerging-surfaces-and-techniques.md` | The architecture exposes AI/MCP, CI/CD, supply-chain, cloud, auth, or parser boundaries |
