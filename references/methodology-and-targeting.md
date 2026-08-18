@@ -45,7 +45,7 @@ Route classes:
 
 ## 2. Invariant-first source review
 
-Selective comprehension is mandatory. Do not read every file, but read enough connected code to explain the security state machine.
+Comprehension is selective across the repository but exhaustive along the chosen invariant. Do not read every file, but read every connected file on the source-to-effect path: do not stop at the first sink, and do not infer an unread link from training priors. When a trace hits a dead end, pivot to another sink or invariant rather than abandoning the target. The Depth contract in `SKILL.md` governs when the trace is complete enough to stop.
 
 ### 2.1 Build the model
 
