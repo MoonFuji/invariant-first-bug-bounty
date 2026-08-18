@@ -59,13 +59,17 @@ The skill treats these as valid outcomes:
 ## How it changes the hunt
 
 ```text
-scope and route
+scope, route, and intent corpus
       |
 security invariant
+      |
+hypothesis queue (creativity-gated, large/unfamiliar targets)
       |
 source-to-effect trace + sibling path
       |
 capability delta + strongest refutation
+      |
+adversarial self-review (advocate / cold verify / causal)
       |
 accepted proof + negative controls
       |
@@ -116,7 +120,7 @@ It writes search results to the chosen output directory. It does not verify vuln
 SKILL.md                         Core invariant-first controller
 agents/openai.yaml               Skill-list metadata
 assets/candidate.template.json   Durable candidate and decision state
-references/                      Proof, targeting, testing, and bug-class guidance
+references/                      Proof, targeting, hypothesis generation, adversarial self-review, and bug-class guidance
 scripts/validate-candidate.py    Model, decision, and report gates
 scripts/recon-sweep.sh           Optional model-gated source coverage
 ```

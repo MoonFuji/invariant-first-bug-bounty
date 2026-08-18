@@ -1,5 +1,47 @@
 # Changelog
 
+## v0.4.0 — discovery front-end and adversarial self-review
+
+Grafts a hypothesis-generation and structured self-challenge front-end onto the
+existing gate machinery, ported selectively from the `piolium` audit engine. The
+guiding rule: piolium's outputs are hypotheses that still owe every gate, never
+verdicts. No new terminal verdicts; the volume/consolidated-report orientation of
+an audit tool is deliberately not adopted.
+
+### Controller and references
+
+- New `references/hypothesis-generation.md`: eight attack modes with a mandatory
+  creativity signal, pre-mortem backward chaining, defensive-code-as-symptom, TRIZ
+  tension scan, and adaptive-attacker framing. Produces a ranked queue; a hypothesis
+  becomes a candidate only after relevance plus a first trace.
+- New `references/adversarial-self-review.md`: a solo role rotation — Advocate (the
+  eight false-positive patterns), zero-context Cold verifier, and Causal challenger
+  — run before proof. It can only lower confidence or KILL; it never clears a gate.
+- `SKILL.md`: an intent corpus in step 1, an ideation step 3 and a self-review step 7
+  (workflow renumbered to 11 steps), a variant sweep in the depth contract, three new
+  rationalizations, and two reference rows.
+- `references/emerging-surfaces-and-techniques.md`: 1G AI-agent CI vectors
+  (A/C/E/F/G/H/I), a seven-vector patch-bypass table (2B), the variant abstraction
+  ladder and class-expansion checklist (2C), and 2G history mining / silent-fix
+  detection.
+- `references/bug-class-taxonomy.md`: section 20, cross-cutting analysis lenses —
+  authorization guard matrix with the outlier-sibling heuristic, state/concurrency
+  enumeration, cross-service taint, fail-open vs fail-secure, and misuse-resistance
+  footguns.
+- `references/methodology-and-targeting.md`: a self-contained report-hygiene lint.
+
+### Candidate schema 5
+
+- Five optional blocks record the new process: `hypothesis_queue`, `intent_corpus`,
+  `adversarial_review`, `variant_sweep`, `patch_bypass`.
+- Hard REPORTABLE gates (schema >= 5 only): `intent_corpus.finding_match` must not be
+  `intentional`; `adversarial_review.cold_verify.verdict` must be `CONFIRMED`; every
+  `advocate.fp_pattern_hits[]` entry must carry a written rebuttal.
+- Warn-only (non-blocking `WARN:` lines, exit 0): a hypothesis with no creativity
+  signal, and an unrecorded variant sweep on a REPORTABLE finding.
+- Legacy schema-3/4 candidates still validate at non-report stages. Seven new
+  acceptance cases (K–P); the suite is 27/27.
+
 ## v0.3.2 — regression fixtures
 
 No validator behavior change. Pins the `target_does_not_own_security_property`
