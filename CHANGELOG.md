@@ -40,6 +40,23 @@ Self-review guardrails:
   leads rather than exhaustively tracing every one, stopping when the abstraction
   ladder's false-positive rate climbs.
 
+Effort discipline (anti-premature-termination; 2026 research shows long-horizon
+agents settle early and defend it, overestimate completion, and that verifiers
+themselves induce early exit — arXiv 2606.22936, 2607.01793, 2605.23574):
+
+- `SKILL.md` core principle now qualifies HOLD/KILL/NO_REPORTABLE_FINDING as
+  successes only when reached after *exhausting* the investigation, not by
+  stopping early.
+- New `SKILL.md` "Exhaust before you conclude": hard is not dead; a wall is a
+  redirect not an exit; the hard proof is the job; give-up is a claim that needs
+  documented exhaustion — with the unifying frame "hustle toward the truth, not
+  toward a report" so effort and the honesty gates never conflict.
+- New `SKILL.md` "Red flags — KEEP GOING": the mirror of the STOP flags — symptoms
+  of quitting too soon (concluding clean after a skim, rotating off a hard target,
+  taking the easy substitute, reading "the gates let me stop" as "I should stop").
+- Depth contract: difficulty is never a rotation trigger — rotate on proof of
+  death, not on how hard the trace is.
+
 Authoring hygiene (from an agent-skill best-practices review): added a table of
 contents to the two reference files over 100 lines (`hypothesis-generation.md`,
 `adversarial-self-review.md`) so partial reads still see full scope, and a negative

@@ -10,11 +10,22 @@ description: >-
 
 Model one security invariant before searching for violations. Trace it through the real entrypoint, validation, authorization, state transition, persistence, and observable effect. Prefer one complete causal trace over many grep hits.
 
-The task does not require a finding. `HOLD`, `KILL`, `ROUTE_ELSEWHERE`, and `NO_REPORTABLE_FINDING` are successful outcomes when supported by evidence.
+The task does not require a finding. `HOLD`, `KILL`, `ROUTE_ELSEWHERE`, and `NO_REPORTABLE_FINDING` are successful outcomes when supported by evidence **and reached after exhausting the investigation** — never when reached by stopping early. Restraint means not over-claiming; it is not permission to under-investigate (see "Exhaust before you conclude").
 
 ## Commit before you hunt
 
 State out loud, and write into `candidate.json`, three things before recon: the operating mode, the one security invariant you will test, and the specific capability delta you expect an attacker to gain. State the terminal verdict and `decision.gate` out loud at the end. Announcing them commits you: an abandoned invariant or a silent slide from `HOLD` toward `REPORTABLE` becomes visible instead of quiet. You do not get to change a declared verdict without appending to `decision_history` and saying why.
+
+## Exhaust before you conclude
+
+The gates in this skill stop you from over-claiming. They are not permission to under-invest. Long-horizon agents fail *quietly*: they settle on a reading early and defend it, overestimate how much they have done, and terminate before the work is finished. A `HOLD`, `KILL`, or `NO_REPORTABLE_FINDING` reached by stopping early is that failure wearing restraint's clothes — so concluding costs the same evidence as reporting.
+
+- **Hard is not dead.** Rotate off an invariant only when it is proven dead (primitive absent, trace complete and safe, route dead), never because it is difficult. "This is fiddly / would take more hours" describes the work; it is not a reason to quit it.
+- **A wall is a redirect, not an exit.** When a trace dead-ends, pivot to another sink, hypothesis, or transport from the queue and keep going. Uncertainty is a cue to investigate, not to hand back.
+- **The hard proof is the job.** Building the exact shipped path, standing up the real instance, tracing the fifth sibling — that is the work, not an optional extra. The easy substitute chosen to avoid it is both a false proof and a dodge.
+- **Give-up is a claim; prove it.** To stop, record what you tried, what remains untried, and why each closed avenue is genuinely dead. "I did enough" is not a verdict; the documented exhaustion is.
+
+**Hustle toward the truth, not toward a report.** Spend maximum effort reaching ground truth — a real finding *or* a genuinely clean result — and let the gates keep whatever you find honest. The two never conflict: you grind to prove or disprove, and you never let the grind become a reason to over-claim.
 
 ## Operating mode
 
@@ -108,7 +119,7 @@ Copy this checklist into your working notes and check off each gate only when an
 
 ## Depth contract
 
-Do not rotate merely to make a hunt look broad. Continue while the selected invariant has untraced enforcement points or meaningful siblings. Rotate only when the primitive is absent, the trace is complete and safe, the route is dead, or contestability makes the expected value poor.
+Do not rotate merely to make a hunt look broad. Continue while the selected invariant has untraced enforcement points or meaningful siblings. Rotate only when the primitive is absent, the trace is complete and safe, the route is dead, or contestability makes the expected value poor. Difficulty is never a rotation trigger: rotate on proof of death, not on how hard or slow the trace is.
 
 Before claiming a repository is clean for an invariant, record:
 
@@ -184,6 +195,19 @@ These are the symptoms of an about-to-fail moment. The instant you notice yourse
 - Feeling the pull to submit *because* rent is due, hours are sunk, or the program "clearly wants a finding." → pressure is not evidence; it is the exact condition under which the gates must hold.
 
 If you cannot proceed without doing one of these, the honest verdict is `HOLD` with the missing evidence named — that is a success, not a failure.
+
+## Red flags — KEEP GOING
+
+The mirror of the flags above. These are the symptoms of quitting too soon; a verifier-driven early exit is a measured failure mode, not diligence. Noticing any means the work is not done — do not stop:
+
+- Concluding "clean" or "no findings" after reading a handful of files, without the five Depth-contract records. → you skimmed; produce them.
+- Rotating off a target because it is hard, slow, or unfamiliar rather than proven dead. → hard is not dead.
+- Reaching for the easy substitute PoC, or a "theoretical" impact, to avoid building the real path. → build the real path.
+- Saying "no meaningful capability change" without having traced. → trace first, then judge.
+- Stopping at the first `HOLD` instead of collecting the evidence it names. → the `HOLD` is your next task, not the exit.
+- Reading "the gates let me stop" as "I should stop." → the gates cap over-claiming, not effort.
+
+Concluding is a claim like any other: it needs the documented exhaustion, not "I did enough."
 
 ## Rationalizations to reject
 
