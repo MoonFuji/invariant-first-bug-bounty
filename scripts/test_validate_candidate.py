@@ -22,8 +22,11 @@ cold_verify requires a persisted sub-claim decomposition with every link support
 
 Cases YA-YE cover v0.4.4 (the immutable commit snapshot + silent-reframe diff; intent
 corpus owed for NO_REPORTABLE_FINDING; all-clean public novelty cannot claim low private
-risk). Cases ZA-ZC cover v0.4.5: a schema-5 REPORTABLE requires a target.saturation
-dedup-visibility assessment, and a non-disclosing program forces private_duplicate_risk high.
+risk). Cases ZA-ZM cover v0.4.5/v0.4.6: the target.saturation dedup-visibility gate
+(non-disclosing -> private_duplicate_risk >= medium), the commit-gate hardening (KILL @ scope
+needs no committed invariant; reframe needs commit.superseded_by; mode diff), the
+collision_differentiator required in a high-dup context, the config_dependency demonstrated-impact
+gate, per-subclaim evidence, and the model-stage saturation assessment.
 
 Run: python3 scripts/test_validate_candidate.py
 Exit 0 = all cases behaved as specified.
@@ -148,6 +151,7 @@ def baseline():
             "observed_result": "boundary crossed",
             "negative_controls": ["benign stays put"],
             "production_relevance": "real path",
+            "config_dependency": "none",
         },
         "route": {
             "owning_project": "o/r",
@@ -221,9 +225,12 @@ def v5_process_blocks():
                 "rederived_severity": "high",
                 "killed_subclaim": None,
                 "subclaims": [
-                    {"claim": "attacker controls the report id", "status": "supported"},
-                    {"claim": "id reaches the query with no tenant filter", "status": "supported"},
-                    {"claim": "the row is returned cross-tenant", "status": "supported"},
+                    {"claim": "attacker controls the report id", "status": "supported",
+                     "evidence": "routes.rb:14 GET /reports/:id -> params[:id]"},
+                    {"claim": "id reaches the query with no tenant filter", "status": "supported",
+                     "evidence": "report_controller.rb:12 Report.find(params[:id])"},
+                    {"claim": "the row is returned cross-tenant", "status": "supported",
+                     "evidence": "poc.sh output: tenant-A token reads tenant-B canary"},
                 ],
             },
             "causal": [
@@ -782,18 +789,20 @@ def case_ZB_reject():
 
 
 def case_ZC_accept():
-    # non-disclosing program, private-dup risk honestly set to high -> accept
+    # non-disclosing program, high risk, but an articulated collision differentiator -> accept
     doc = baseline_v5()
     doc["target"]["saturation"]["discloses_reports"] = False
     doc["novelty"]["private_duplicate_risk"] = "high"
+    doc["novelty"]["collision_differentiator"] = "cross-layer raw-hex vs canonical desync; no public advisory; in-repo v4 stores canonical"
     return doc, "report", 0
 
 
 def case_ZG_accept():
-    # non-disclosing program, bespoke low-collision finding at medium risk -> accept (>= medium ok)
+    # non-disclosing program, medium risk, with a differentiator -> accept (>= medium ok)
     doc = baseline_v5()
     doc["target"]["saturation"]["discloses_reports"] = False
     doc["novelty"]["private_duplicate_risk"] = "medium"
+    doc["novelty"]["collision_differentiator"] = "bespoke vein a diff-reader never reaches"
     return doc, "report", 0
 
 
@@ -829,6 +838,50 @@ def case_ZF_reject():
     return doc, "report", 2
 
 
+def case_ZH_reject():
+    # high private-dup risk but no collision differentiator -> reject (label alone is not enough)
+    doc = baseline_v5()
+    doc["novelty"]["private_duplicate_risk"] = "high"
+    return doc, "report", 2
+
+
+def case_ZI_accept():
+    # high private-dup risk WITH an articulated collision differentiator -> accept
+    doc = baseline_v5()
+    doc["novelty"]["private_duplicate_risk"] = "high"
+    doc["novelty"]["collision_differentiator"] = "cross-layer normalization desync; no public advisory"
+    return doc, "report", 0
+
+
+def case_ZJ_reject():
+    # finding manifests only in a default/dev config a real deployment overrides -> reject
+    doc = baseline_v5()
+    doc["proof"]["config_dependency"] = "default_only"
+    return doc, "report", 2
+
+
+def case_ZK_reject():
+    # a CONFIRMED subclaim with no evidence locator -> reject
+    doc = baseline_v5()
+    doc["adversarial_review"]["cold_verify"]["subclaims"] = [
+        {"claim": "attacker controls X", "status": "supported", "evidence": "x.rb:1"},
+        {"claim": "X reaches the sink", "status": "supported"},
+    ]
+    return doc, "report", 2
+
+
+def case_ZL_reject():
+    # schema-5 model stage without a dedup-visibility assessment -> reject
+    doc = baseline_v5()
+    doc["target"]["saturation"]["discloses_reports"] = None
+    return doc, "model", 2
+
+
+def case_ZM_accept():
+    # schema-5 model stage with the dedup-visibility assessment present -> accept
+    return baseline_v5(), "model", 0
+
+
 CASES = [
     ("2  resolution attacks same boundary -> ACCEPT", case_2_accept, None),
     ("K  schema-5 process gates satisfied -> ACCEPT", case_K_accept, None),
@@ -862,6 +915,12 @@ CASES = [
     ("ZD schema-5 KILL @ scope, no committed invariant -> ACCEPT", case_ZD_accept, None),
     ("ZE invariant reframe + junk history, no superseded_by -> REJECT", case_ZE_reject, "commit.superseded_by"),
     ("ZF committed mode != operating mode -> REJECT", case_ZF_reject, "operating-mode switch"),
+    ("ZH high dup-risk, no collision differentiator -> REJECT", case_ZH_reject, "collision_differentiator"),
+    ("ZI high dup-risk + differentiator -> ACCEPT", case_ZI_accept, None),
+    ("ZJ config_dependency default_only -> REJECT", case_ZJ_reject, "config_dependency"),
+    ("ZK CONFIRMED subclaim with no evidence -> REJECT", case_ZK_reject, "evidence must cite"),
+    ("ZL model stage, no dedup-visibility assessment -> REJECT", case_ZL_reject, "discloses_reports"),
+    ("ZM model stage with saturation present -> ACCEPT", case_ZM_accept, None),
     ("5  commits+issues+PRs evidenced -> ACCEPT", case_5_accept, None),
     ("5b upstream channels explicit -> ACCEPT", case_5b_accept, None),
     ("7b by-design -> KILL@refutation -> ACCEPT", case_7b_accept, None),

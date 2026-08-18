@@ -1,5 +1,41 @@
 # Changelog
 
+## v0.4.6 — behavioral brakes on the two live loss modes
+
+Answers a research-tight review of v0.4.5 whose central point was correct and code-verified: R1 made
+duplicate risk *honest* but not *binding* — `private_duplicate_risk: high` + `distinct` still exited 0,
+and the mined losses were labelled high and shipped anyway. Two design forks were chosen jointly (soft
+brake, not hard block; targeted field, not broad enum) to avoid regressing the skill's own strengths.
+Suite 52 → 58.
+
+- **Collision-differentiator brake (the 23/23 lever, now behavioral).** In a **high-dup context** —
+  `private_duplicate_risk: high`, a non-disclosing program, or `target.saturation.hot_cluster` —
+  REPORTABLE now requires `novelty.collision_differentiator`: the articulated reason *this* finding is
+  low-collision despite the swarm (a Tier-3 cross-layer / no-advisory / bespoke vein). It is a **soft**
+  brake, not a hard block on high risk — a hard block would kill the Tier-3 findings that pay on
+  swarmed programs (the TFH win) — but it forces the win-vs-dupe distinction the data turns on. (ZH/ZI)
+- **Saturation assessment moved to selection time.** `target.saturation.discloses_reports` is now owed
+  by the **model stage**, not only at report — dedup visibility is confronted before the deep trace is
+  invested. (ZL/ZM)
+- **`proof.config_dependency` closes the informative class.** `none | default_only |
+  requires_insecure_config`; REPORTABLE requires `none`. A finding that manifests only in a default/dev
+  config a real deployment overrides (`default_only`, the Lightspark informative) or needs an insecure
+  config no real deployment uses (`requires_insecure_config`, operator-config-as-attacker-input) is
+  `HOLD`/`KILL`. A lab-reproduced source-only finding is `none` and unaffected — the targeted field was
+  chosen over a broad `deployment_impact` enum precisely to avoid blocking source-only lab proof. (ZJ)
+- **Per-subclaim evidence.** A CONFIRMED `cold_verify` now needs a locator (`path:line`, artifact, or
+  script output) on each `subclaims[]` link — shrinks pure-prose gaming of the decomposition. (ZK)
+- **Honesty caveats (prose).** `methodology` §1 now states the saturation finding is *one hunter's H1
+  distribution (n=37), not a universal law* — re-mine for other platforms — and that on a non-disclosing
+  program `distinct` means *distinct-from-public-only*; the collision_differentiator, not `distinct`, is
+  what carries a high-dup-context finding.
+
+Held the line the data drew (unchanged, not re-litigated): no reframe to "only chase non-obvious," the
+incomplete-fix vein stays (re-aimed by the §2B tiers), and no reputation-panic (dupe/informative do not
+lower Signal). Still deferred: tool-derived artifacts required in `exhaustion.tried[]` (would false-
+negative legitimate source-only-reading clean conclusions); a re-mine after 15–20 new adjudications to
+measure whether the dupe rate actually moved.
+
 ## v0.4.5 — data-driven selection: the duplicate problem
 
 The first release tuned to the hunter's **real failure distribution** rather than reviews or theory.

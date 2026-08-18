@@ -115,7 +115,8 @@
     "command": "",
     "observed_result": "",
     "negative_controls": [],
-    "production_relevance": ""
+    "production_relevance": "",
+    "config_dependency": "none"
   },
   "route": {
     "owning_project": "",
@@ -176,6 +177,7 @@
     "semantic_delta": "",
     "classification": "uncertain",
     "private_duplicate_risk": "unknown",
+    "collision_differentiator": "",
     "current_upstream_state": {
       "ref": "",
       "checked_at": "",
