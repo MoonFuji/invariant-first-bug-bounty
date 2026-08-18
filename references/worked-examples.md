@@ -225,3 +225,8 @@ The unifying test: a real defect is not a finding until it grants a **new** capa
 **attacker-reachable** actor in a **real** deployment. Absent that it is `HOLD`/`KILL`, never a
 submission — even when the code is genuinely wrong. (Every one of these was flagged by the hunter's
 own pre-submit analysis and submitted anyway; the gate must bind, not be talked past.)
+
+The default-config and operator-config cases now map to a checkable field: `proof.config_dependency`
+— `default_only` (the effect appears only in a default/dev config a real deployment overrides) and
+`requires_insecure_config` (needs an insecure config no real deployment uses) both forbid REPORTABLE;
+a lab-reproduced source-only finding is `none` and unaffected.

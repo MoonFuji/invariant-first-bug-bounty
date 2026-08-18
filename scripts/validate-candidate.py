@@ -37,6 +37,7 @@ SUPPORTED_SCHEMA_VERSIONS = {3, 4, 5}
 INTENT_MATCHES = {"none", "intentional", "acknowledged"}
 COLD_VERIFY_VERDICTS = {"CONFIRMED", "DISPROVED", "UNCERTAIN"}
 SUBCLAIM_STATUSES = {"supported", "unsupported"}
+CONFIG_DEPENDENCIES = {"none", "default_only", "requires_insecure_config"}
 # A refutation's `kind`. Every kind except non_terminal invalidates the
 # candidate's own security model: it says the objection is not an ordinary
 # counter-argument but a statement that the target does not own the boundary.
@@ -778,6 +779,21 @@ def novelty_has_positive_signal(document):
     return False
 
 
+def validate_saturation_present(document, errors):
+    """Schema-5 model stage: assess dedup visibility BEFORE the deep trace. Duplicates are decided
+    at selection, not at proof, so target.saturation.discloses_reports is owed by the model gate --
+    a swarmed / non-disclosing program should be confronted before hours are invested in a trace."""
+    version = value_at(document, "schema_version")
+    if not isinstance(version, int) or version < 5:
+        return
+    sat = value_at(document, "target.saturation")
+    if not isinstance(sat, dict) or not isinstance(sat.get("discloses_reports"), bool):
+        errors.append(
+            "schema 5 requires target.saturation.discloses_reports (a boolean) by the model stage -- "
+            "assess whether the program is dedupable before investing the trace; dupes are decided at selection"
+        )
+
+
 def validate_saturation_for_report(document, errors):
     """Schema-5 REPORTABLE: duplicates are the dominant failure and they are decided at
     target selection, not at proof. In the mined history every adjudicated duplicate sat on
@@ -808,6 +824,22 @@ def validate_saturation_for_report(document, errors):
             "cannot be claimed -- assess it medium or high; a bespoke, low-collision finding may still "
             "be medium, but never low where you cannot dedup at all"
         )
+    # When dedup visibility is poor -- high private-dup risk, a non-disclosing program, or a hot
+    # class-cluster -- an honest risk label is not enough (the mined losses were labelled high and
+    # shipped anyway). REPORTABLE then requires an articulated collision differentiator: why THIS
+    # finding is low-collision despite the swarm (a Tier-3 cross-layer / no-advisory / bespoke vein).
+    # This does not hard-block a high-risk finding -- that would kill the Tier-3 wins that pay on
+    # swarmed programs -- but it forces the win-vs-dupe distinction the data turns on.
+    hot = sat.get("hot_cluster")
+    if risk == "high" or discloses is False or hot is True:
+        differentiator = value_at(document, "novelty.collision_differentiator")
+        if not isinstance(differentiator, str) or not differentiator.strip():
+            errors.append(
+                "high private-duplicate context (risk high, non-disclosing program, or hot cluster) "
+                "requires novelty.collision_differentiator: the articulated reason this specific finding "
+                "is low-collision despite the swarm (a cross-layer / no-advisory / bespoke Tier-3 vein); "
+                "an honest 'high' label alone did not stop a duplicate historically"
+            )
 
 
 def validate_schema5_report_gates(document, errors):
@@ -936,6 +968,12 @@ def validate_schema5_report_gates(document, errors):
                         f"{spath} is not supported; an unsupported sub-claim contradicts a CONFIRMED "
                         "verdict (the finding fails at that link -> DISPROVED/HOLD, not REPORTABLE)"
                     )
+                evidence = subclaim.get("evidence")
+                if not isinstance(evidence, str) or not evidence.strip():
+                    errors.append(
+                        f"{spath}.evidence must cite a locator (path:line, artifact, or script output) "
+                        "grounding this link -- a bare claim + status is still a self-signed decomposition"
+                    )
 
     hits = value_at(document, "adversarial_review.advocate.fp_pattern_hits")
     if hits is None:
@@ -960,6 +998,23 @@ def validate_schema5_report_gates(document, errors):
                     f"{path} rebuttal needs evidence: a file:line control, artifact, or policy "
                     "citation that grounds it -- prose alone does not clear the pattern"
                 )
+
+    # The demonstrated-impact bar for the informative class: a finding that manifests only in a
+    # default/dev config a real deployment overrides, or that needs an insecure config no real
+    # deployment uses (operator config, not attacker input), is not reportable. Lab-reproduced
+    # source-only findings are config_dependency "none" and unaffected.
+    config_dep = value_at(document, "proof.config_dependency")
+    if config_dep not in CONFIG_DEPENDENCIES:
+        errors.append(
+            "REPORTABLE requires proof.config_dependency assessed (one of "
+            + ", ".join(sorted(CONFIG_DEPENDENCIES)) + ")"
+        )
+    elif config_dep != "none":
+        errors.append(
+            f"proof.config_dependency {config_dep} forbids REPORTABLE: the effect appears only in a "
+            "default/dev config a real deployment overrides, or requires an insecure config no real "
+            "deployment uses (operator config is not attacker input) -- HOLD or KILL, not report"
+        )
 
 
 def collect_warnings(document):
@@ -1018,6 +1073,7 @@ def validate_through(document, errors, gate):
         )
         return
     validate_model_fields(document, errors)
+    validate_saturation_present(document, errors)
     if gate == "model":
         return
     if gate == "relevance":
