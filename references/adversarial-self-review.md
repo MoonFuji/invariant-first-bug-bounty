@@ -14,6 +14,14 @@ next**. The point is separation — the mind that imagined the attack is not, in
 mind that validates it. That is what removes confirmation bias; the discipline is the ordering,
 not any tooling.
 
+Solo rotation is the **portable floor, not the ceiling**: a single context cannot fully shed its
+own anchoring. If your harness can spawn an independent verifier — a fresh agent, session, or
+model handed only the repository and the candidate artifact, with none of your prosecution
+narrative — use it for Role 2 (Cold verifier). A genuinely fresh context is strictly stronger
+than re-reading your own trace "coldly," and the main agent must not author that verifier's
+verdict. When no such channel exists, the in-context role rotation below is the disciplined
+substitute; run it either way.
+
 Run this pass after the strongest-refutation attempt and before proof. It can only lower
 confidence or set `KILL`; it never clears the `refutation` or `novelty` gates. Record the result
 in `candidate.json.adversarial_review`.
@@ -127,7 +135,8 @@ in evidence *and* fails to find a path that skips it.
 
 ```jsonc
 "adversarial_review": {
-  "advocate":   { "layers_checked": [...], "fp_pattern_hits": [{ "pattern": "", "rebuttal": "" }],
+  "advocate":   { "layers_checked": [...],
+                  "fp_pattern_hits": [{ "pattern": "", "rebuttal": "", "evidence": "" }],
                   "strongest_defense": "", "blocks": false },
   "cold_verify":{ "verdict": "CONFIRMED|DISPROVED|UNCERTAIN", "rederived_severity": "",
                   "killed_subclaim": null },
@@ -136,5 +145,8 @@ in evidence *and* fails to find a path that skips it.
 }
 ```
 
-At `REPORTABLE`, the report-stage validator requires `cold_verify.verdict == "CONFIRMED"` and
-every `advocate.fp_pattern_hits[]` entry to carry a non-empty `rebuttal`.
+At `REPORTABLE`, the report-stage validator requires this block to show the pass actually ran, not
+just that it is present: `advocate` with a non-empty `layers_checked` and `strongest_defense` and
+`blocks: false`; `cold_verify.verdict == "CONFIRMED"` with a non-empty `rederived_severity` and a
+null `killed_subclaim`; and every `advocate.fp_pattern_hits[]` entry carrying both a non-empty
+`rebuttal` and an `evidence` locator (a file:line control, artifact, or policy citation).

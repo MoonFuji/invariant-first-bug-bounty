@@ -1,5 +1,86 @@
 # Changelog
 
+## v0.4.2 — campaign continuation and self-review anti-gaming
+
+Answers two external design reviews. Their shared diagnosis is correct and adopted: the skill was
+optimized hard to *reject* bad findings but only weakly to *keep discovering*, so an agent could
+kill one candidate and treat the target as finished ("one invariant had become one hunt"), and the
+schema-5 self-review blocks were satisfiable without doing the work. Their prescribed cure — turn
+the portable skill into a Claude-Code plugin with Stop hooks, subagents, `hunt-state.json`, a
+campaign validator, a repo mapper, a 3-skill split, and a behavioral eval suite — is largely
+declined (see "Deliberately not adopted"); the fixes below deliver the same intent at the skill's
+actual abstraction level.
+
+Validator hardening (`scripts/validate-candidate.py`; suite 27 → 34):
+
+- **Report stage now requires `schema_version >= 5`.** A schema-4 candidate validated at report
+  stage, bypassing every schema-5 gate while the skill told agents to "migrate before REPORTABLE."
+  The rule is now mechanical; legacy schema-3/4 still validate at model/decision stages. (case Q)
+- **Shallow schema-5 self-review no longer passes.** The `REPORTABLE` gate previously ignored most
+  fields. It now rejects: `advocate.blocks == true` (R), `cold_verify` CONFIRMED with a non-null
+  `killed_subclaim` (S) or an empty `rederived_severity` (T), an empty `advocate.layers_checked`
+  (U) or `strongest_defense`, an `intent_corpus` with no `checked_at`/`sources` (V), and an
+  `fp_pattern_hits[]` rebuttal with no `evidence` locator (W) — the same "field satisfiable without
+  the work" failure schema 4 closed for refutation and novelty.
+- Warn-only: an empty `hypothesis_queue` now warns (the ideation front-end was skippable silently);
+  the missing-`creativity_signal` warning was reworded from "drop it" to "rank by expected value,"
+  matching the calibration fix below.
+
+Campaign continuation (the core behavioral fix — Anthropic's long-running-harness guidance keeps
+unfinished work visibly pending rather than letting a later step declare done):
+
+- `SKILL.md` **Core principle** reframed: a hunt is a *campaign over many hypotheses, validated one
+  at a time*. A terminal verdict closes that hypothesis, **not the target**; the target is clean
+  only when the ranked queue is exhausted with documented coverage.
+- New workflow **step 12, "Continue the campaign"**: after a terminal verdict, update the queue
+  entry's status and promote the next hypothesis; a `KILL`/`HOLD`/`NO_REPORTABLE_FINDING` is never
+  the end of the hunt on its own. Checklist extended to 12.
+- Workflow **step 2/3 ordering fixed** (they were contradictory — step 2 committed "one invariant,"
+  step 3 generated hypotheses "before committing the invariant"). Step 2 now enumerates the
+  *invariant space* and orients across the whole request surface (§20A) without anchoring; step 3
+  ranks and promotes exactly one.
+- `hypothesis_queue` is now the durable **campaign ledger** with a per-entry `status`
+  (`queued → investigating → closed`) and `closed_verdict` (`references/hypothesis-generation.md`),
+  resolving the "queue has no lifecycle / which copy is authoritative" smell without new machinery.
+- `NO_REPORTABLE_FINDING` sharpened to candidate scope in the terminal-verdicts table; Depth
+  contract now states target-clean is a higher bar than invariant-clean.
+
+Calibration (stop the discovery front-end from suppressing valid findings or over-claiming):
+
+- Creativity signal is a **ranking input, not an admission gate**: do not discard a reachable,
+  high-impact, owned-boundary hypothesis for being an "obvious" sink (`hypothesis-generation.md`,
+  `SKILL.md` step 3). Cross-mode chains no longer auto-rank highest — rank by expected value; a
+  simple reachable authz bug can outrank a speculative chain. "A guard is *proof*" softened to
+  "a guard is *evidence* worth investigating."
+- `bug-class-taxonomy.md` §20: two categorical statements ("pre-auth sink is one band higher,"
+  "a webhook without idempotency is itself a finding") softened to hypotheses that still owe the
+  trace and proof — consistent with the file's own signal → hypothesis → verdict rule.
+- `adversarial-self-review.md`: solo role rotation is the **portable floor**; when the harness can
+  spawn a genuinely independent verifier (fresh context, only the artifact, no prosecution
+  narrative), use it for the cold-verify role — it is strictly stronger, and the main agent may not
+  author its verdict.
+- `agents/openai.yaml` default prompt is now campaign-oriented (map, rank a queue, one invariant at
+  a time, continue until the queue is exhausted) instead of "model one invariant."
+
+Deliberately not adopted (diagnosis accepted, prescription declined — recorded so it is not
+re-litigated):
+
+- **Claude-Code plugin harness** (`.claude-plugin/plugin.json`, Stop hooks, `stop-gate.py`,
+  mapper/tracer/verifier subagents, `hunt-state.json`, `validate-hunt.py`, splitting into three
+  skills). The skill is deliberately portable and agent-agnostic (ships via `npx skills` and
+  `agents/openai.yaml`); these are Claude-Code-only and would fork it into two products. A
+  mechanical anti-stop hook also induces hypothesis-padding (the "twelve nonsense hypotheses"
+  failure the review itself warns of) and fights the honesty ethic that an evidenced early `KILL`
+  is a success. The continuation behavior is delivered in prose + the existing queue instead.
+- **Behavioral eval suite.** The user has validated the skill with and without it across many real
+  reports and explicitly declined building evals; that instruction stands.
+- **`map-repository.py`** deterministic architecture extractor. A robust polyglot mapper is brittle;
+  the agent's own step-2 reading is a more flexible mapper. Step 2's prose was strengthened instead.
+- **Renaming the `NO_REPORTABLE_FINDING` verdict and `recon-sweep.sh`.** Broad churn for low
+  behavioral gain once the definitions and campaign framing are sharpened; deferred.
+- **A hard `patch_bypass` validator.** It applies only to patch-derived findings; the "the fix
+  exists, so it's handled" rationalization already covers it in prose. Deferred.
+
 ## v0.4.1 — discipline hardening and self-review guardrails
 
 Documentation-only refinements to the v0.4.0 workflow; no validator or schema

@@ -7,11 +7,14 @@ Reproduces the two failure shapes that reached HackerOne as Informative:
   - a `distinct` novelty claim backed only by `git log`, skipping the upstream
     issue/PR search (marcel #153 live dup; activeresource #358 by-design).
 
-Schema-5 cases (K-P) cover the report-stage process gates: a finding matching a
-documented intentional behavior, a cold verification that did not CONFIRM, and
-an unrebutted false-positive-pattern hit each forbid REPORTABLE. Legacy schema-4
-candidates keep validating (the baseline is still schema 4), so the golden cases
-above are unchanged.
+Schema-5 cases (K-W) cover the report-stage process gates: report stage now
+requires schema_version >= 5 (Q), and a finding matching a documented intentional
+behavior, a cold verification that did not CONFIRM, an Advocate whose own defense
+blocks the finding, a CONFIRMED verdict contradicted by a killed subclaim or an
+empty re-derived severity, an Advocate that searched no layers, an empty intent
+corpus, and an FP-pattern rebuttal with no evidence each forbid REPORTABLE. The
+report-stage accepts are migrated to schema 5; legacy schema-3/4 candidates still
+validate at the model and decision stages (legacy, G-J).
 
 Run: python3 scripts/test_validate_candidate.py
 Exit 0 = all cases behaved as specified.
@@ -232,31 +235,32 @@ def baseline_v5():
 
 
 def case_2_accept():
-    return baseline(), "report", 0
+    # the golden report accept is now schema 5 (schema 4 cannot reach report stage)
+    return baseline_v5(), "report", 0
 
 
 def case_5_accept():
-    # same as baseline: commits + issues + PRs evidenced, distinct
-    return baseline(), "report", 0
+    # same as baseline_v5: commits + issues + PRs evidenced, distinct
+    return baseline_v5(), "report", 0
 
 
 def case_1_reject():
     # refuted but resolution empty -> reject
-    doc = baseline()
+    doc = baseline_v5()
     doc["threat_model"]["strongest_refutation"]["resolution"] = ""
     return doc, "report", 2
 
 
 def case_1b_reject():
     # refuted but resolution has no independent evidence artifact
-    doc = baseline()
+    doc = baseline_v5()
     doc["threat_model"]["strongest_refutation"]["evidence"] = ""
     return doc, "report", 2
 
 
 def case_3_reject():
     # terminal kind owned_boundary_absent, "resolved" by third-party misuse
-    doc = baseline()
+    doc = baseline_v5()
     doc["threat_model"]["strongest_refutation"] = {
         "claim": "the SDK model field is not an authorization policy",
         "kind": "owned_boundary_absent",
@@ -270,7 +274,7 @@ def case_3_reject():
 
 def case_4_reject():
     # distinct claimed but upstream_history has no issue/PR channels (git log only)
-    doc = baseline()
+    doc = baseline_v5()
     for check in doc["novelty"]["checks"]:
         if check["source"] == "upstream_history":
             check.pop("channels", None)
@@ -280,7 +284,7 @@ def case_4_reject():
 
 def case_5b_accept():
     # explicit: commits+issues+PRs each evidenced -> accept
-    doc = baseline()
+    doc = baseline_v5()
     for check in doc["novelty"]["checks"]:
         if check["source"] == "upstream_history":
             check["channels"] = upstream_channels(("no_match", "no_match", "no_match"))
@@ -289,7 +293,7 @@ def case_5b_accept():
 
 def case_6_reject():
     # a checked PR channel exposes a match whose fingerprint == root cause, yet distinct
-    doc = baseline()
+    doc = baseline_v5()
     fp = doc["novelty"]["root_cause_fingerprint"]
     for check in doc["novelty"]["checks"]:
         if check["source"] == "upstream_history":
@@ -305,7 +309,7 @@ def case_6_reject():
 
 def case_7_reject():
     # upstream issue establishes by-design; candidate still claims REPORTABLE
-    doc = baseline()
+    doc = baseline_v5()
     for check in doc["novelty"]["checks"]:
         if check["source"] == "upstream_history":
             channels = upstream_channels(("no_match", "checked", "no_match"))
@@ -368,19 +372,19 @@ def legacy_backward_compat_accept():
 # (label, builder, required stderr substring for the REJECT reason)
 def case_A_reject():
     # stale checkout vulnerable, but current main is fixed -> distinct rejected
-    doc = baseline()
+    doc = baseline_v5()
     doc["novelty"]["current_upstream_state"]["result"] = "fixed"
     return doc, "report", 2
 
 
 def case_B_accept():
     # current main still vulnerable with a fetch artifact -> distinct accepted
-    return baseline(), "report", 0
+    return baseline_v5(), "report", 0
 
 
 def case_C_reject():
     # GitHub PR channel unavailable with only a prose reason (no attempt artifact)
-    doc = baseline()
+    doc = baseline_v5()
     for check in doc["novelty"]["checks"]:
         if check["source"] == "upstream_history":
             channels = upstream_channels(("no_match", "no_match", "unavailable"))
@@ -392,7 +396,7 @@ def case_C_reject():
 
 def case_D_reject():
     # GitHub PR search attempted, tool failed, artifact present, but still claims distinct
-    doc = baseline()
+    doc = baseline_v5()
     for check in doc["novelty"]["checks"]:
         if check["source"] == "upstream_history":
             channels = upstream_channels(("no_match", "no_match", "unavailable"))
@@ -404,7 +408,7 @@ def case_D_reject():
 
 def case_E_accept():
     # non-GitHub upstream with no PR concept -> unavailable channels accepted
-    doc = baseline()
+    doc = baseline_v5()
     doc["target"]["repository"] = "git.launchpad.net/o/r"
     doc["route"]["owning_project"] = "o/r"
     for check in doc["novelty"]["checks"]:
@@ -555,10 +559,14 @@ def case_N_reject():
 
 
 def case_O_accept():
-    # same FP-pattern hit, now rebutted with evidence -> accept
+    # same FP-pattern hit, now rebutted with a grounded evidence locator -> accept
     doc = baseline_v5()
     doc["adversarial_review"]["advocate"]["fp_pattern_hits"] = [
-        {"pattern": "same-origin confusion", "rebuttal": "cross-tenant: attacker A reads tenant B"}
+        {
+            "pattern": "same-origin confusion",
+            "rebuttal": "cross-tenant: attacker A reads tenant B",
+            "evidence": "ReportController#show loads Report.find(id) with no org filter (app/controllers/report_controller.rb:12)",
+        }
     ]
     return doc, "report", 0
 
@@ -570,6 +578,55 @@ def case_P_reject():
     return doc, "report", 2
 
 
+def case_Q_reject():
+    # a fully valid schema-4 REPORTABLE cannot reach report stage; migrate to schema 5
+    return baseline(), "report", 2
+
+
+def case_R_reject():
+    # cold_verify CONFIRMED but the Advocate's own defense blocks the finding -> reject
+    doc = baseline_v5()
+    doc["adversarial_review"]["advocate"]["blocks"] = True
+    return doc, "report", 2
+
+
+def case_S_reject():
+    # cold_verify CONFIRMED contradicts a non-null killed_subclaim -> reject
+    doc = baseline_v5()
+    doc["adversarial_review"]["cold_verify"]["killed_subclaim"] = "sub-claim B never proven"
+    return doc, "report", 2
+
+
+def case_T_reject():
+    # cold_verify CONFIRMED with an empty rederived_severity -> reject
+    doc = baseline_v5()
+    doc["adversarial_review"]["cold_verify"]["rederived_severity"] = ""
+    return doc, "report", 2
+
+
+def case_U_reject():
+    # Advocate recorded no protection layers searched -> the pass did not run -> reject
+    doc = baseline_v5()
+    doc["adversarial_review"]["advocate"]["layers_checked"] = []
+    return doc, "report", 2
+
+
+def case_V_reject():
+    # intent corpus with no sources listed -> an empty corpus pass -> reject
+    doc = baseline_v5()
+    doc["intent_corpus"]["sources"] = []
+    return doc, "report", 2
+
+
+def case_W_reject():
+    # FP-pattern hit rebutted in prose but with no evidence locator -> reject
+    doc = baseline_v5()
+    doc["adversarial_review"]["advocate"]["fp_pattern_hits"] = [
+        {"pattern": "framework-protection blindness", "rebuttal": "the ORM does not parameterize this call"}
+    ]
+    return doc, "report", 2
+
+
 CASES = [
     ("2  resolution attacks same boundary -> ACCEPT", case_2_accept, None),
     ("K  schema-5 process gates satisfied -> ACCEPT", case_K_accept, None),
@@ -578,6 +635,13 @@ CASES = [
     ("M  cold verify not CONFIRMED -> REJECT", case_M_reject, "cold_verify.verdict CONFIRMED"),
     ("N  unrebutted FP-pattern hit -> REJECT", case_N_reject, "unrebutted"),
     ("P  schema-5 missing adversarial_review -> REJECT", case_P_reject, "requires an adversarial_review block"),
+    ("Q  schema-4 at report stage -> REJECT", case_Q_reject, "schema_version >= 5"),
+    ("R  advocate blocks the finding, yet REPORTABLE -> REJECT", case_R_reject, "advocate.blocks is true"),
+    ("S  cold_verify CONFIRMED + killed_subclaim -> REJECT", case_S_reject, "killed_subclaim"),
+    ("T  cold_verify CONFIRMED, empty severity -> REJECT", case_T_reject, "rederived_severity"),
+    ("U  advocate searched no layers -> REJECT", case_U_reject, "layers_checked"),
+    ("V  intent corpus with no sources -> REJECT", case_V_reject, "intent_corpus.sources"),
+    ("W  FP rebuttal with no evidence locator -> REJECT", case_W_reject, "needs evidence"),
     ("5  commits+issues+PRs evidenced -> ACCEPT", case_5_accept, None),
     ("5b upstream channels explicit -> ACCEPT", case_5b_accept, None),
     ("7b by-design -> KILL@refutation -> ACCEPT", case_7b_accept, None),
