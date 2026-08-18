@@ -315,6 +315,8 @@ What was not tested, unresolved input-carrier or deployment assumptions, process
 Fix the authoritative enforcement point and add the demonstrated regression control.
 ```
 
+**Report hygiene (self-contained rule).** The report must stand alone: a triager understands the vulnerability, trace, impact, and reproduction without opening any working file. Ban pointer phrases ("see the draft/notes", "for the full trace see …") and internal identifiers (`candidate_id`, gate/stage tags) — inline the content instead. Pin every repository link to the exact commit **SHA**, never a branch like `main`, so it stays stable. Distinguish observed behavior (from a captured evidence artifact) from inferred impact. Embed the smallest snippet that proves the bug. Never write that a PoC executed unless an artifact shows it — otherwise label it theoretical or blocked with the reason.
+
 ## 7. Terminal decisions
 
 After setting any verdict, validate the evidence appropriate to where research ended:
