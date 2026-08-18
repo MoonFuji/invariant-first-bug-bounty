@@ -187,6 +187,13 @@ def baseline():
 def v5_process_blocks():
     """The schema-5 ideation + self-review blocks in their REPORTABLE-passing state."""
     return {
+        "commit": {
+            "mode": "SOURCE_ONLY",
+            "invariant": "inv",
+            "expected_delta": "attacker reads another tenant's report",
+            "committed_at": "2026-08-08",
+            "superseded_by": "",
+        },
         "hypothesis_queue": [
             {"id": "H-01", "title": "cross-mode chain", "creativity_signal": "non-obvious"}
         ],
@@ -718,6 +725,42 @@ def case_XF_reject():
     return doc, "report", 2
 
 
+def case_YA_reject():
+    # schema-5 candidate with the commit snapshot removed -> reject
+    doc = baseline_v5()
+    del doc["commit"]
+    return doc, "report", 2
+
+
+def case_YB_reject():
+    # committed invariant differs from the current one, no reframe recorded -> reject
+    doc = baseline_v5()
+    doc["commit"]["invariant"] = "a different invariant I started on"
+    return doc, "report", 2
+
+
+def case_YC_accept():
+    # same drift, but the reframe is recorded via commit.superseded_by -> accept
+    doc = baseline_v5()
+    doc["commit"]["invariant"] = "a different invariant I started on"
+    doc["commit"]["superseded_by"] = "reframed after tracing to the tenant-scope boundary"
+    return doc, "report", 0
+
+
+def case_YD_reject():
+    # NO_REPORTABLE_FINDING with the intent corpus removed -> reject (owed by step 1)
+    doc = baseline_nrf()
+    del doc["intent_corpus"]
+    return doc, "decision", 2
+
+
+def case_YE_reject():
+    # REPORTABLE, every public novelty check clean, yet claims low private-dup risk -> reject
+    doc = baseline_v5()
+    doc["novelty"]["private_duplicate_risk"] = "low"
+    return doc, "report", 2
+
+
 CASES = [
     ("2  resolution attacks same boundary -> ACCEPT", case_2_accept, None),
     ("K  schema-5 process gates satisfied -> ACCEPT", case_K_accept, None),
@@ -739,6 +782,11 @@ CASES = [
     ("XD NO_REPORTABLE_FINDING, empty tried[] -> REJECT", case_XD_reject, "exhaustion.tried"),
     ("XE CONFIRMED cold_verify, no subclaims -> REJECT", case_XE_reject, "cold_verify.subclaims"),
     ("XF CONFIRMED cold_verify, unsupported subclaim -> REJECT", case_XF_reject, "not supported"),
+    ("YA schema-5 missing commit block -> REJECT", case_YA_reject, "requires a commit block"),
+    ("YB committed invariant drift, no reframe -> REJECT", case_YB_reject, "silent reframe"),
+    ("YC committed invariant drift, superseded_by set -> ACCEPT", case_YC_accept, None),
+    ("YD NO_REPORTABLE_FINDING, no intent corpus -> REJECT", case_YD_reject, "intent_corpus"),
+    ("YE REPORTABLE all-clean novelty, low private risk -> REJECT", case_YE_reject, "cannot claim low"),
     ("5  commits+issues+PRs evidenced -> ACCEPT", case_5_accept, None),
     ("5b upstream channels explicit -> ACCEPT", case_5b_accept, None),
     ("7b by-design -> KILL@refutation -> ACCEPT", case_7b_accept, None),

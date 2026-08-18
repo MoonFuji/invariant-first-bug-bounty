@@ -32,8 +32,10 @@ Hypothesis record (keep it terse; store the survivors in `candidate.json.hypothe
 - target asset (what the attacker gains)
 - suspected entrypoint and sink
 - creativity signal (one line; a ranking input, not a keep/drop gate)
-- priority (expected-value rank) and **status**: `queued` → `investigating` → `closed`
-- closed_verdict (once `closed`): the candidate's terminal verdict + gate (e.g. `KILL @ refutation`)
+- priority (expected-value rank) and **status**: `queued` → `investigating` → `closed`, or `parked`
+- closed_verdict (once `closed`): the candidate's terminal verdict + gate (e.g. `KILL @ refutation`); or,
+  once `parked`, a `park_reason` recording the expected-value rationale for rotating off — never "too
+  hard" (difficulty is not an exit; see the Depth contract), and only with a higher-EV item still queued
 
 The queue is the **campaign ledger**: it is the one durable, authoritative list of what has been
 tried and what remains. It is not per-candidate scratch — carry it forward as you move from one
