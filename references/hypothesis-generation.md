@@ -25,6 +25,12 @@ Promote exactly one hypothesis to the invariant and run the full workflow on it.
 as the reinvestment queue; do not spawn a second trace until the first reaches a terminal verdict.
 Volume of hypotheses is not depth — the depth contract still governs when to rotate.
 
+A hypothesis that relevance or a first trace does not support is simply dropped from the queue and
+you pivot to the next — that is the queue working, not a failed target, and it has no effect on
+`candidate.json` (a hypothesis is not a candidate, so there is no gate to fail). Only give up on
+the whole target when the queue is exhausted and the depth contract's clean-repository record is
+complete for each invariant you tried.
+
 ## Eight attack modes
 
 Cycle all eight against the recorded architecture. Cross-mode chains rank highest — they are

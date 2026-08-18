@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Acceptance tests for validate-candidate.py (skill v0.4.0 / schema 5).
+"""Acceptance tests for validate-candidate.py (skill v0.4.1 / schema 5).
 
 Reproduces the two failure shapes that reached HackerOne as Informative:
   - a terminal refutation marked `refuted` with no resolution attacking the
