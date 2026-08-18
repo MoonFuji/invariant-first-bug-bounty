@@ -15,9 +15,13 @@ a `candidate.json` only after it survives relevance and a first trace, exactly a
 workflow. Ideation widens what you consider; it never lowers a gate.
 
 Discipline: every hypothesis carries a **creativity signal** — one line on why a grep sweep or
-a first-pass read would miss it. No creativity signal → discard it. If the idea is obvious
-("SQL built by string concatenation"), `recon-sweep.sh` or a scanner already has it, and it is
-not worth an ideation slot.
+a first-pass read would miss it. The signal is a **ranking input, not an admission gate**: it
+feeds novelty and duplicate-risk scoring, not a keep/drop decision. An "obvious" idea ("SQL
+built by string concatenation") is likelier already reported and a scanner may have it, so it
+ranks lower on novelty — but if it is reachable, high-impact, and on an owned boundary that a
+scanner's caller-contract blindness would miss, it can still be the highest-expected-value
+hypothesis in the queue. Rank by expected value; never auto-discard a real, reachable bug for
+lacking cleverness.
 
 Hypothesis record (keep it terse; store the survivors in `candidate.json.hypothesis_queue`):
 
@@ -27,11 +31,17 @@ Hypothesis record (keep it terse; store the survivors in `candidate.json.hypothe
 - preconditions (attacker starting position + required capability)
 - target asset (what the attacker gains)
 - suspected entrypoint and sink
-- creativity signal (mandatory)
+- creativity signal (one line; a ranking input, not a keep/drop gate)
+- priority (expected-value rank) and **status**: `queued` → `investigating` → `closed`
+- closed_verdict (once `closed`): the candidate's terminal verdict + gate (e.g. `KILL @ refutation`)
 
-Promote exactly one hypothesis to the invariant and run the full workflow on it. Keep the rest
-as the reinvestment queue; do not spawn a second trace until the first reaches a terminal verdict.
-Volume of hypotheses is not depth — the depth contract still governs when to rotate.
+The queue is the **campaign ledger**: it is the one durable, authoritative list of what has been
+tried and what remains. It is not per-candidate scratch — carry it forward as you move from one
+invariant to the next, and update each entry's `status` in place rather than starting a fresh queue
+that forgets the closed ones. Promote exactly one `queued` hypothesis to the invariant (set it
+`investigating`), run the full workflow, and on its terminal verdict mark it `closed` with the
+verdict before promoting the next. Do not spawn a second trace until the first reaches a terminal
+verdict. Volume of hypotheses is not depth — the depth contract still governs when to rotate.
 
 A hypothesis that relevance or a first trace does not support is simply dropped from the queue and
 you pivot to the next — that is the queue working, not a failed target, and it has no effect on
@@ -41,8 +51,11 @@ complete for each invariant you tried.
 
 ## Eight attack modes
 
-Cycle all eight against the recorded architecture. Cross-mode chains rank highest — they are
-also the ideas that survive duplicate pools, which is where single-mode ideas usually die.
+Cycle all eight against the recorded architecture. Cross-mode chains often survive the duplicate
+pools where single-mode ideas die — but they also cost more assumptions, more context, and a
+harder proof, and every extra link is another place the chain can be invented. Rank them by
+expected value like anything else: a simple, clearly reachable authorization bug outranks a
+speculative three-stage chain. Novelty is one axis, not an automatic top rank.
 
 1. **Chaining** — combine individually-low issues across a trust boundary. IDOR on metadata +
    a token in that metadata = ATO. SSRF limited to internal DNS + DNS resolving a metadata
@@ -101,9 +114,10 @@ Enumerate every defensive construct on the path (guard, clamp, retry, fallback, 
 assert, sanitizer). For each ask: *what danger forced the author to write this?* Then: does the
 fallback/error path grant any access, return any data, or skip any check the happy path enforces?
 Does downstream code assume the happy path ran and behave differently on the fallback value? A
-guard that exists is proof the author expected hostile input there — go find the input shape it
-was meant to stop and test whether it fully stops it, especially the encoding/case/normalization
-variants the author may not have considered.
+guard that exists is **evidence** (not proof) that the author expected hostile input there — a
+lead worth investigating, not a finding on its own. Go find the input shape it was meant to stop
+and test whether it fully stops it, especially the encoding/case/normalization variants the
+author may not have considered.
 
 ## Contradiction / tension scan (TRIZ)
 

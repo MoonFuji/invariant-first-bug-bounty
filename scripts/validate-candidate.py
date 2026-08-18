@@ -625,9 +625,14 @@ def validate_schema5_report_gates(document, errors):
     """Hard REPORTABLE gates introduced with schema 5. Applies only to schema >= 5.
 
     A schema-5 REPORTABLE candidate must have run the intent-corpus and adversarial
-    self-review passes: the finding cannot match a documented intentional behavior,
-    the cold verifier must have CONFIRMED it, and every false-positive-pattern hit
-    the Advocate raised must carry a written rebuttal.
+    self-review passes *with their substantive fields filled*: the finding cannot match a
+    documented intentional behavior; the Advocate must have walked the protection layers,
+    stated the strongest defense, and not itself concluded the finding is blocked; the cold
+    verifier must have CONFIRMED it with a re-derived severity and no killed subclaim; and
+    every false-positive-pattern hit the Advocate raised must carry a written, evidenced
+    rebuttal. Filling a block with empty or contradictory fields does not satisfy the gate —
+    that is the same "field satisfiable without the work" failure schema 4 closed for the
+    refutation and novelty blocks.
     """
     version = value_at(document, "schema_version")
     if not isinstance(version, int) or version < 5:
@@ -647,11 +652,45 @@ def validate_schema5_report_gates(document, errors):
                 "intent_corpus.finding_match intentional forbids REPORTABLE; the behavior is a "
                 "documented contract (KILL @ refutation, behavior_is_documented_contract)"
             )
+        checked_at = intent.get("checked_at")
+        if not isinstance(checked_at, str) or not checked_at.strip():
+            errors.append(
+                "schema 5 REPORTABLE requires intent_corpus.checked_at recording when the "
+                "project's own docs were read; an empty corpus pass does not satisfy the gate"
+            )
+        sources = intent.get("sources")
+        if not isinstance(sources, list) or not sources:
+            errors.append(
+                "schema 5 REPORTABLE requires intent_corpus.sources listing the target-authored "
+                "documents checked; record what you read even when it carries no by-design note"
+            )
 
     review = value_at(document, "adversarial_review")
     if not isinstance(review, dict):
         errors.append("schema 5 REPORTABLE requires an adversarial_review block")
         return
+
+    advocate = review.get("advocate")
+    if not isinstance(advocate, dict):
+        errors.append("schema 5 REPORTABLE requires an adversarial_review.advocate block")
+    else:
+        layers = advocate.get("layers_checked")
+        if not isinstance(layers, list) or not layers:
+            errors.append(
+                "REPORTABLE requires adversarial_review.advocate.layers_checked to record the "
+                "protection layers the Advocate searched; an empty list means the pass did not run"
+            )
+        defense = advocate.get("strongest_defense")
+        if not isinstance(defense, str) or not defense.strip():
+            errors.append(
+                "REPORTABLE requires adversarial_review.advocate.strongest_defense; state the "
+                "best benign case built against the finding even if it does not hold"
+            )
+        if advocate.get("blocks") is True:
+            errors.append(
+                "adversarial_review.advocate.blocks is true; the Advocate built a defense that "
+                "blocks the finding, which forbids REPORTABLE (resolve it with evidence or KILL)"
+            )
 
     verdict = value_at(document, "adversarial_review.cold_verify.verdict")
     if verdict not in COLD_VERIFY_VERDICTS:
@@ -664,6 +703,18 @@ def validate_schema5_report_gates(document, errors):
             "REPORTABLE requires adversarial_review.cold_verify.verdict CONFIRMED "
             f"(got {verdict}); a DISPROVED or UNCERTAIN cold verification cannot be reported"
         )
+    else:
+        severity = value_at(document, "adversarial_review.cold_verify.rederived_severity")
+        if not isinstance(severity, str) or not severity.strip():
+            errors.append(
+                "a CONFIRMED cold_verify requires a non-empty rederived_severity; severity is "
+                "re-derived from MEDIUM, not carried over from the draft"
+            )
+        if value_at(document, "adversarial_review.cold_verify.killed_subclaim") is not None:
+            errors.append(
+                "adversarial_review.cold_verify.verdict CONFIRMED contradicts a non-null "
+                "killed_subclaim; a killed subclaim is a DISPROVED or UNCERTAIN result"
+            )
 
     hits = value_at(document, "adversarial_review.advocate.fp_pattern_hits")
     if hits is None:
@@ -674,13 +725,19 @@ def validate_schema5_report_gates(document, errors):
         for index, hit in enumerate(hits):
             path = f"adversarial_review.advocate.fp_pattern_hits[{index}]"
             if not isinstance(hit, dict):
-                errors.append(f"{path} must be an object with pattern and rebuttal")
+                errors.append(f"{path} must be an object with pattern, rebuttal, evidence")
                 continue
             rebuttal = hit.get("rebuttal")
             if not isinstance(rebuttal, str) or not rebuttal.strip():
                 errors.append(
                     f"{path} is an unrebutted false-positive-pattern hit; write a rebuttal "
                     "(with evidence) or take the implied KILL"
+                )
+            evidence = hit.get("evidence")
+            if not isinstance(evidence, str) or not evidence.strip():
+                errors.append(
+                    f"{path} rebuttal needs evidence: a file:line control, artifact, or policy "
+                    "citation that grounds it -- prose alone does not clear the pattern"
                 )
 
 
@@ -696,13 +753,19 @@ def collect_warnings(document):
         return warnings
 
     queue = value_at(document, "hypothesis_queue")
-    if isinstance(queue, list):
+    if not isinstance(queue, list) or not queue:
+        warnings.append(
+            "hypothesis_queue is empty; on a large or unfamiliar target run one ideation pass "
+            "(references/hypothesis-generation.md) and rank the surface before concluding it is covered"
+        )
+    else:
         for index, item in enumerate(queue):
             signal = item.get("creativity_signal") if isinstance(item, dict) else None
             if not isinstance(signal, str) or not signal.strip():
                 warnings.append(
-                    f"hypothesis_queue[{index}] has no creativity_signal; a scanner likely "
-                    "already has it -- drop or justify it"
+                    f"hypothesis_queue[{index}] has no creativity_signal; weigh its novelty and "
+                    "duplicate risk -- an obvious sink can still be reachable and worth tracing, but "
+                    "is likelier already reported, so rank it by expected value, do not auto-drop it"
                 )
 
     if value_at(document, "decision.verdict") == "REPORTABLE":
@@ -892,6 +955,16 @@ def validate_report(document, errors):
     validate_decision(document, errors)
     if value_at(document, "decision.verdict") != "REPORTABLE":
         errors.append("decision.verdict must be REPORTABLE for report stage")
+    # A report must carry the schema-5 ideation and self-review evidence. A
+    # legacy schema-3/4 candidate validates at model/decision stages but cannot
+    # reach a submission-ready report without migrating, so the intent-corpus and
+    # adversarial self-review gates below actually apply.
+    version = value_at(document, "schema_version")
+    if not isinstance(version, int) or version < 5:
+        errors.append(
+            "report stage requires schema_version >= 5; migrate the candidate to schema 5 so "
+            "the intent-corpus and adversarial self-review gates apply before REPORTABLE"
+        )
 
 
 def parse_args():
