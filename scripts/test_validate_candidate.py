@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
-"""Acceptance tests for validate-candidate.py (skill v0.3.1 / schema 4).
+"""Acceptance tests for validate-candidate.py (skill v0.4.0 / schema 5).
 
 Reproduces the two failure shapes that reached HackerOne as Informative:
   - a terminal refutation marked `refuted` with no resolution attacking the
     owned boundary (Vertex model-route escape / #3858135);
   - a `distinct` novelty claim backed only by `git log`, skipping the upstream
     issue/PR search (marcel #153 live dup; activeresource #358 by-design).
+
+Schema-5 cases (K-P) cover the report-stage process gates: a finding matching a
+documented intentional behavior, a cold verification that did not CONFIRM, and
+an unrebutted false-positive-pattern hit each forbid REPORTABLE. Legacy schema-4
+candidates keep validating (the baseline is still schema 4), so the golden cases
+above are unchanged.
 
 Run: python3 scripts/test_validate_candidate.py
 Exit 0 = all cases behaved as specified.
@@ -169,6 +175,60 @@ def baseline():
             "decided_at": "2026-08-08",
         },
     }
+
+
+def v5_process_blocks():
+    """The schema-5 ideation + self-review blocks in their REPORTABLE-passing state."""
+    return {
+        "hypothesis_queue": [
+            {"id": "H-01", "title": "cross-mode chain", "creativity_signal": "non-obvious"}
+        ],
+        "intent_corpus": {
+            "checked_at": "2026-08-08",
+            "sources": ["SECURITY.md"],
+            "intentional_behaviors": [],
+            "acknowledged_risks": [{"quote": "auth bypass is in scope", "source": "SECURITY.md"}],
+            "finding_match": "none",
+        },
+        "adversarial_review": {
+            "advocate": {
+                "layers_checked": ["framework", "application"],
+                "fp_pattern_hits": [],
+                "strongest_defense": "no layer blocks the traced path",
+                "blocks": False,
+            },
+            "cold_verify": {
+                "verdict": "CONFIRMED",
+                "rederived_severity": "high",
+                "killed_subclaim": None,
+            },
+            "causal": [
+                {
+                    "protection": "input length clamp",
+                    "intervention": "removing it still reaches the sink",
+                    "counterfactual": "never triggered by normal traffic",
+                    "confounder": "in reviewed code, not upstream",
+                    "fragility": "fragile",
+                }
+            ],
+        },
+        "variant_sweep": {
+            "flow_shape": "request -> join -> sql",
+            "grep_artifact": "/tmp/sweep.txt",
+            "siblings_checked": ["cleanup path"],
+            "alternate_transports_checked": ["grpc", "queue"],
+            "variants_found": [],
+        },
+        "patch_bypass": {"base_fix_ref": "", "vectors": {}},
+    }
+
+
+def baseline_v5():
+    """A schema-5 REPORTABLE candidate with the process gates satisfied: the golden v5 ACCEPT."""
+    doc = baseline()
+    doc["schema_version"] = 5
+    doc.update(v5_process_blocks())
+    return doc
 
 
 def case_2_accept():
@@ -466,8 +526,58 @@ def case_J_reject():
     return doc, "decision", 2
 
 
+def case_K_accept():
+    # schema-5 with intent corpus clean + cold verify CONFIRMED + no FP hits -> accept
+    return baseline_v5(), "report", 0
+
+
+def case_L_reject():
+    # finding matches a documented intentional behavior -> forbid REPORTABLE
+    doc = baseline_v5()
+    doc["intent_corpus"]["finding_match"] = "intentional"
+    return doc, "report", 2
+
+
+def case_M_reject():
+    # cold verifier did not CONFIRM -> forbid REPORTABLE
+    doc = baseline_v5()
+    doc["adversarial_review"]["cold_verify"]["verdict"] = "DISPROVED"
+    return doc, "report", 2
+
+
+def case_N_reject():
+    # an FP-pattern hit with no rebuttal -> forbid REPORTABLE
+    doc = baseline_v5()
+    doc["adversarial_review"]["advocate"]["fp_pattern_hits"] = [
+        {"pattern": "same-origin confusion", "rebuttal": ""}
+    ]
+    return doc, "report", 2
+
+
+def case_O_accept():
+    # same FP-pattern hit, now rebutted with evidence -> accept
+    doc = baseline_v5()
+    doc["adversarial_review"]["advocate"]["fp_pattern_hits"] = [
+        {"pattern": "same-origin confusion", "rebuttal": "cross-tenant: attacker A reads tenant B"}
+    ]
+    return doc, "report", 0
+
+
+def case_P_reject():
+    # schema-5 REPORTABLE missing the adversarial_review block entirely -> reject
+    doc = baseline_v5()
+    del doc["adversarial_review"]
+    return doc, "report", 2
+
+
 CASES = [
     ("2  resolution attacks same boundary -> ACCEPT", case_2_accept, None),
+    ("K  schema-5 process gates satisfied -> ACCEPT", case_K_accept, None),
+    ("O  FP-pattern hit rebutted -> ACCEPT", case_O_accept, None),
+    ("L  intent match intentional -> REJECT", case_L_reject, "intentional forbids REPORTABLE"),
+    ("M  cold verify not CONFIRMED -> REJECT", case_M_reject, "cold_verify.verdict CONFIRMED"),
+    ("N  unrebutted FP-pattern hit -> REJECT", case_N_reject, "unrebutted"),
+    ("P  schema-5 missing adversarial_review -> REJECT", case_P_reject, "requires an adversarial_review block"),
     ("5  commits+issues+PRs evidenced -> ACCEPT", case_5_accept, None),
     ("5b upstream channels explicit -> ACCEPT", case_5b_accept, None),
     ("7b by-design -> KILL@refutation -> ACCEPT", case_7b_accept, None),

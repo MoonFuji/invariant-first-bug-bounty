@@ -29,7 +29,13 @@ GATES = {
 }
 OPERATING_MODES = {"SOURCE_ONLY", "PROGRAM_HOSTED"}
 REFUTATION_RESULTS = {"refuted", "confirmed", "unresolved"}
-SUPPORTED_SCHEMA_VERSIONS = {3, 4}
+SUPPORTED_SCHEMA_VERSIONS = {3, 4, 5}
+# Schema 5 process-evidence blocks (ideation + adversarial self-review). The
+# report-stage gates below apply only when schema_version >= 5; legacy schema-3/4
+# candidates still validate at non-report stages, matching the skill's
+# "migrate before REPORTABLE" rule.
+INTENT_MATCHES = {"none", "intentional", "acknowledged"}
+COLD_VERIFY_VERDICTS = {"CONFIRMED", "DISPROVED", "UNCERTAIN"}
 # A refutation's `kind`. Every kind except non_terminal invalidates the
 # candidate's own security model: it says the objection is not an ordinary
 # counter-argument but a statement that the target does not own the boundary.
@@ -178,7 +184,7 @@ def require_evidence(obj, path, errors):
 
 def validate_common(document, errors):
     if value_at(document, "schema_version") not in SUPPORTED_SCHEMA_VERSIONS:
-        errors.append("schema_version must be 3 or 4")
+        errors.append("schema_version must be 3, 4, or 5")
 
     verdict = value_at(document, "decision.verdict")
     gate = value_at(document, "decision.gate")
@@ -615,6 +621,106 @@ def validate_novelty_fields(document, errors):
                 )
 
 
+def validate_schema5_report_gates(document, errors):
+    """Hard REPORTABLE gates introduced with schema 5. Applies only to schema >= 5.
+
+    A schema-5 REPORTABLE candidate must have run the intent-corpus and adversarial
+    self-review passes: the finding cannot match a documented intentional behavior,
+    the cold verifier must have CONFIRMED it, and every false-positive-pattern hit
+    the Advocate raised must carry a written rebuttal.
+    """
+    version = value_at(document, "schema_version")
+    if not isinstance(version, int) or version < 5:
+        return
+
+    intent = value_at(document, "intent_corpus")
+    if not isinstance(intent, dict):
+        errors.append("schema 5 REPORTABLE requires an intent_corpus block")
+    else:
+        match = intent.get("finding_match")
+        if match not in INTENT_MATCHES:
+            errors.append(
+                "intent_corpus.finding_match must be one of " + ", ".join(sorted(INTENT_MATCHES))
+            )
+        elif match == "intentional":
+            errors.append(
+                "intent_corpus.finding_match intentional forbids REPORTABLE; the behavior is a "
+                "documented contract (KILL @ refutation, behavior_is_documented_contract)"
+            )
+
+    review = value_at(document, "adversarial_review")
+    if not isinstance(review, dict):
+        errors.append("schema 5 REPORTABLE requires an adversarial_review block")
+        return
+
+    verdict = value_at(document, "adversarial_review.cold_verify.verdict")
+    if verdict not in COLD_VERIFY_VERDICTS:
+        errors.append(
+            "adversarial_review.cold_verify.verdict must be one of "
+            + ", ".join(sorted(COLD_VERIFY_VERDICTS))
+        )
+    elif verdict != "CONFIRMED":
+        errors.append(
+            "REPORTABLE requires adversarial_review.cold_verify.verdict CONFIRMED "
+            f"(got {verdict}); a DISPROVED or UNCERTAIN cold verification cannot be reported"
+        )
+
+    hits = value_at(document, "adversarial_review.advocate.fp_pattern_hits")
+    if hits is None:
+        hits = []
+    if not isinstance(hits, list):
+        errors.append("adversarial_review.advocate.fp_pattern_hits must be an array")
+    else:
+        for index, hit in enumerate(hits):
+            path = f"adversarial_review.advocate.fp_pattern_hits[{index}]"
+            if not isinstance(hit, dict):
+                errors.append(f"{path} must be an object with pattern and rebuttal")
+                continue
+            rebuttal = hit.get("rebuttal")
+            if not isinstance(rebuttal, str) or not rebuttal.strip():
+                errors.append(
+                    f"{path} is an unrebutted false-positive-pattern hit; write a rebuttal "
+                    "(with evidence) or take the implied KILL"
+                )
+
+
+def collect_warnings(document):
+    """Non-blocking advisories for the warn-only schema-5 process steps.
+
+    Ideation and variant discovery are recorded but never block a verdict; a
+    missing creativity signal or an unrecorded variant sweep is a note, not an error.
+    """
+    warnings = []
+    version = value_at(document, "schema_version")
+    if not isinstance(version, int) or version < 5:
+        return warnings
+
+    queue = value_at(document, "hypothesis_queue")
+    if isinstance(queue, list):
+        for index, item in enumerate(queue):
+            signal = item.get("creativity_signal") if isinstance(item, dict) else None
+            if not isinstance(signal, str) or not signal.strip():
+                warnings.append(
+                    f"hypothesis_queue[{index}] has no creativity_signal; a scanner likely "
+                    "already has it -- drop or justify it"
+                )
+
+    if value_at(document, "decision.verdict") == "REPORTABLE":
+        sweep = value_at(document, "variant_sweep")
+        recorded = isinstance(sweep, dict) and (
+            (isinstance(sweep.get("flow_shape"), str) and sweep["flow_shape"].strip())
+            or sweep.get("variants_found")
+            or sweep.get("siblings_checked")
+            or sweep.get("alternate_transports_checked")
+        )
+        if not recorded:
+            warnings.append(
+                "variant_sweep is unrecorded on a REPORTABLE finding; a variant is a second "
+                "submission left on the table -- sweep siblings and alternate transports"
+            )
+    return warnings
+
+
 def validate_through(document, errors, gate):
     validate_common(document, errors)
     if gate is None:
@@ -779,6 +885,7 @@ def validate_decision(document, errors):
             errors.append("REPORTABLE requires novelty.classification distinct")
         if value_at(document, "novelty.private_duplicate_risk") == "unknown":
             errors.append("REPORTABLE requires assessed private_duplicate_risk")
+        validate_schema5_report_gates(document, errors)
 
 
 def validate_report(document, errors):
@@ -831,6 +938,9 @@ def main():
         for error in dict.fromkeys(errors):
             print(f"ERROR: {error}", file=sys.stderr)
         return 2
+
+    for warning in dict.fromkeys(collect_warnings(document)):
+        print(f"WARN: {warning}", file=sys.stderr)
 
     labels = {
         "model": "MODEL READY",
