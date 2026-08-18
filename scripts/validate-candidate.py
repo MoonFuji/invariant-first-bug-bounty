@@ -36,6 +36,7 @@ SUPPORTED_SCHEMA_VERSIONS = {3, 4, 5}
 # "migrate before REPORTABLE" rule.
 INTENT_MATCHES = {"none", "intentional", "acknowledged"}
 COLD_VERIFY_VERDICTS = {"CONFIRMED", "DISPROVED", "UNCERTAIN"}
+SUBCLAIM_STATUSES = {"supported", "unsupported"}
 # A refutation's `kind`. Every kind except non_terminal invalidates the
 # candidate's own security model: it says the objection is not an ordinary
 # counter-argument but a statement that the target does not own the boundary.
@@ -621,6 +622,58 @@ def validate_novelty_fields(document, errors):
                 )
 
 
+def validate_exhaustion(document, errors):
+    """Schema-5 NO_REPORTABLE_FINDING must carry a checkable exhaustion record.
+
+    "The invariant held" is the weakest terminal to fake: the prior gates accept
+    plausible prose, so an agent under token pressure can skim, restate intent as a
+    confirmed refutation, and declare clean. Requiring the concrete record the Depth
+    contract already names -- what was tried, and the five clean-repository fields --
+    does not *prove* exhaustion (prose is still prose), but it raises the floor from a
+    bare verdict to an articulated, auditable one, symmetric with how REPORTABLE must
+    articulate its evidence. Only applies to schema >= 5; the honesty-critical check
+    belongs in low-freedom structure, not only a KEEP-GOING prose list.
+    """
+    version = value_at(document, "schema_version")
+    if not isinstance(version, int) or version < 5:
+        return
+    exhaustion = value_at(document, "exhaustion")
+    if not isinstance(exhaustion, dict):
+        errors.append(
+            "schema 5 NO_REPORTABLE_FINDING requires an exhaustion block (tried[], depth_contract) "
+            "-- a clean conclusion is a claim that owes the same articulated evidence as a report"
+        )
+        return
+    tried = exhaustion.get("tried")
+    if (
+        not isinstance(tried, list)
+        or not tried
+        or any(not isinstance(item, str) or not item.strip() for item in tried)
+    ):
+        errors.append(
+            "NO_REPORTABLE_FINDING requires exhaustion.tried to list the concrete avenues "
+            "investigated (non-empty strings); document the work, do not assert it"
+        )
+    depth = exhaustion.get("depth_contract")
+    depth_fields = (
+        "entrypoint",
+        "invariant_enforcement",
+        "trace",
+        "sibling_checked",
+        "defeated_counterexample",
+    )
+    if not isinstance(depth, dict):
+        errors.append(
+            "NO_REPORTABLE_FINDING requires exhaustion.depth_contract with the five clean-repository "
+            "records (" + ", ".join(depth_fields) + ")"
+        )
+    else:
+        for field in depth_fields:
+            value = depth.get(field)
+            if not isinstance(value, str) or not value.strip():
+                errors.append(f"exhaustion.depth_contract.{field} must be a non-empty string")
+
+
 def validate_schema5_report_gates(document, errors):
     """Hard REPORTABLE gates introduced with schema 5. Applies only to schema >= 5.
 
@@ -715,6 +768,38 @@ def validate_schema5_report_gates(document, errors):
                 "adversarial_review.cold_verify.verdict CONFIRMED contradicts a non-null "
                 "killed_subclaim; a killed subclaim is a DISPROVED or UNCERTAIN result"
             )
+        # Persist the decomposition the cold verifier is told to build (claim -> A: attacker
+        # controls X, B: X reaches Y unsanitized, C: Y causes effect Z). Forcing the explicit
+        # decomposition *before* a CONFIRMED verdict is what turns a self-graded checkbox into
+        # work with a cost: an unsupported link contradicts the verdict. Self-preference bias in
+        # self-evaluation is strongest exactly when the trace is subtly wrong, and an explicit
+        # pre-verdict decomposition is the documented mitigation.
+        subclaims = value_at(document, "adversarial_review.cold_verify.subclaims")
+        if not isinstance(subclaims, list) or len(subclaims) < 2:
+            errors.append(
+                "a CONFIRMED cold_verify requires cold_verify.subclaims to record the decomposition "
+                "(>= 2, e.g. attacker controls X; X reaches Y unsanitized; Y causes effect Z); a bare "
+                "verdict without the decomposition is a self-signed certificate"
+            )
+        else:
+            for sindex, subclaim in enumerate(subclaims):
+                spath = f"adversarial_review.cold_verify.subclaims[{sindex}]"
+                if not isinstance(subclaim, dict):
+                    errors.append(f"{spath} must be an object with claim and status")
+                    continue
+                claim = subclaim.get("claim")
+                if not isinstance(claim, str) or not claim.strip():
+                    errors.append(f"{spath}.claim must be a non-empty string")
+                status = subclaim.get("status")
+                if status not in SUBCLAIM_STATUSES:
+                    errors.append(
+                        f"{spath}.status must be one of " + ", ".join(sorted(SUBCLAIM_STATUSES))
+                    )
+                elif status != "supported":
+                    errors.append(
+                        f"{spath} is not supported; an unsupported sub-claim contradicts a CONFIRMED "
+                        "verdict (the finding fails at that link -> DISPROVED/HOLD, not REPORTABLE)"
+                    )
 
     hits = value_at(document, "adversarial_review.advocate.fp_pattern_hits")
     if hits is None:
@@ -911,6 +996,7 @@ def validate_decision(document, errors):
         if refutation_view(document)["result"] != "confirmed":
             errors.append("NO_REPORTABLE_FINDING requires refutation result confirmed")
         require_equal_capabilities(document, errors, "NO_REPORTABLE_FINDING")
+        validate_exhaustion(document, errors)
     elif verdict == "REPORTABLE":
         require_capability_delta(document, errors)
         view = refutation_view(document)
