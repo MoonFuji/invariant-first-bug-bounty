@@ -72,12 +72,14 @@ Distinct from the classic CI injection in §1B: here the workflow wires an **AI 
 A freshly-published fix is a map to where the dangerous code is and what the author believed they fixed.
 - Pull the fix commit/PR (GitHub, the advisory's "patched in" link). Read the diff, not the prose.
 - Ask: **what exactly did this guard block, and what does it still let through?** Sanitizers are often incomplete.
-- This is the cheapest fresh-bug source because the hard part (locating the sink) is done for you.
+- It is cheap to *find* — the hard part (locating the sink) is done for you — but often **expensive to resolve on the wrong target** (see the EV rule in 2B). A public advisory is a starting gun; on a fresh, marquee CVE the embargo crowd has already swept the obvious variants.
 
 ### 2B. Incomplete-fix hunting
 - The patch fixes the reported payload but not a *class* of payloads (e.g. blocks `../` but not `..\\` or URL-encoded `%2e%2e`; blocks one IMDS IP but not IPv6/decimal).
 - The patch fixes one *entry point* but the vulnerable helper has other callers (→ 2C variant analysis).
 - The patch is on `main` but **not released**, or released but **not back-ported** to LTS/older branches that are still in scope (n-day). A still-present sink at the released artifact's HEAD is reportable even if `main` was "fixed."
+
+**EV rule — incomplete-fix pays on *cold* CVEs and dupes on *hot* ones.** In observed program dynamics, every incomplete-fix of a *freshly-published* CVE/GHSA on a *marquee* component duplicated — the crowd swept it during embargo — while the only incomplete-fix still alive was of a five-year-old CVE on a peripheral, less-audited component. So an incomplete-fix keyed off a fresh + marquee advisory carries `private_duplicate_risk: high` by construction: pursue it only if you find a **distinct semantic invariant or an unaffected asset**, not merely a new payload or entry point. Incomplete-fix is EV-positive mainly on **old CVEs in cold, peripheral components**. Do not abandon the vein — re-aim it.
 
 Run the fix diff and its callers through seven bypass vectors before calling the class dead; record each in `candidate.json.patch_bypass.vectors`. Any hit is a fresh candidate — trace it as its own invariant (the original CVE proves plausibility, not this target's actor/reachability/impact).
 

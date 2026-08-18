@@ -5,8 +5,9 @@
 - Example 2 — a clean REPORTABLE: cross-tenant read (`REPORTABLE @ reportability`)
 - Example 3 — HOLD: proof stuck at primitive fidelity (`HOLD @ proof`)
 - Example 4 — ROUTE_ELSEWHERE: the fix belongs upstream (`ROUTE_ELSEWHERE @ route`)
+- Calibration from synthetic gate examples (what a weak finding looks like)
 
-Two candidates walked to a terminal verdict, showing the decisive `candidate.json` fields
+Four candidates walked to a terminal verdict, showing the decisive `candidate.json` fields
 (not the whole file — see `assets/candidate.template.json` for the full shape). Copy the
 *shape of the reasoning*, not the specifics. The point of each is the gate where it lands and
 why.
@@ -201,3 +202,26 @@ lands at `ownership|route`. Here another project owns and can fix it, so route i
 
 Filing this against `acme-app`'s program because it has a payout is venue-shopping; the fix — and
 the valid disclosure — belongs where the code lives.
+
+## Calibration from synthetic gate examples (what a weak finding looks like)
+
+These are condensed from reports actually closed **Informative** — valid code defects that failed
+the capability-delta or demonstrated-impact bar. Each is the trap the examples above are meant to
+stop; the pattern, not the specifics, is the lesson.
+
+- **Operator config mis-cast as attacker input → `KILL @ capability_delta`.** A transport guard
+  bypassable only by an attacker who *controls the `base_url`* — but whoever sets `base_url` already
+  has that capability. Same shape: a path traversal reachable only by an *authenticated model
+  selector* (operator config). Ask FP-pattern 6: is the tainted value operator/deployer config? Then
+  it is not an attack, however real the code defect.
+- **Default-config-only exposure → `HOLD @ proof`, not REPORTABLE.** A service that exposes internal
+  endpoints in its *default/dev template* while production enforces auth. The "prod enforces it"
+  rebuttal lands; without a real managed-deployment reproduction the demonstrated impact is missing.
+- **Owned-boundary defect with no shipped sink → `KILL @ reachability`.** A real key-handling defect
+  where the only caller reaching the keys is *same-realm* and already holds them — no cross-realm
+  sink ships. The defect is real; the reachability is not.
+
+The unifying test: a real defect is not a finding until it grants a **new** capability to an
+**attacker-reachable** actor in a **real** deployment. Absent that it is `HOLD`/`KILL`, never a
+submission — even when the code is genuinely wrong. (Every one of these was flagged by the hunter's
+own pre-submit analysis and submitted anyway; the gate must bind, not be talked past.)

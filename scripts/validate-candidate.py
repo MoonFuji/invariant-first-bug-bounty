@@ -760,6 +760,38 @@ def novelty_has_positive_signal(document):
     return False
 
 
+def validate_saturation_for_report(document, errors):
+    """Schema-5 REPORTABLE: duplicates are the dominant failure and they are decided at
+    target selection, not at proof. In the mined history every adjudicated duplicate sat on
+    a marquee/high-volume or *non-disclosing* program where the private pool could not be
+    deduped. Require the dedup-visibility assessment, and make a non-disclosing program --
+    which gives zero public dedup signal -- carry high private-duplicate risk by construction.
+    """
+    version = value_at(document, "schema_version")
+    if not isinstance(version, int) or version < 5:
+        return
+    sat = value_at(document, "target.saturation")
+    if not isinstance(sat, dict):
+        errors.append(
+            "schema 5 REPORTABLE requires target.saturation (reports_last_90d, discloses_reports, "
+            "hot_cluster); duplicates are decided at target selection, so assess dedup visibility"
+        )
+        return
+    discloses = sat.get("discloses_reports")
+    if not isinstance(discloses, bool):
+        errors.append(
+            "target.saturation.discloses_reports must be a boolean -- can you dedup against the "
+            "program's public reports, or is the private pool invisible?"
+        )
+    risk = value_at(document, "novelty.private_duplicate_risk")
+    if discloses is False and risk != "high":
+        errors.append(
+            "a non-disclosing program gives zero public dedup signal, so "
+            "target.saturation.discloses_reports false forces private_duplicate_risk high; every "
+            "mined duplicate was on a swarmed or non-disclosing program"
+        )
+
+
 def validate_schema5_report_gates(document, errors):
     """Hard REPORTABLE gates introduced with schema 5. Applies only to schema >= 5.
 
@@ -1131,6 +1163,7 @@ def validate_decision(document, errors):
                 "private_duplicate_risk; absence of public matches is not evidence about the "
                 "invisible private pool -- assess it medium or high"
             )
+        validate_saturation_for_report(document, errors)
         validate_schema5_report_gates(document, errors)
 
 

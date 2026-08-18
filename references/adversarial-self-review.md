@@ -51,9 +51,14 @@ finding; each maps onto an existing gate or terminal refutation kind.
    dressed up as cross-boundary? (→ `owned_boundary_absent`)
 5. **Dependency CVE without reachability** — is the vulnerable function called with attacker input
    on a runtime path that ships? (→ `reachability`)
-6. **Config-as-vulnerability** — does exploitation require admin to set an insecure config, or a
-   non-default config no real deployment uses? (→ `required_precondition_already_grants_effect`
-   or `behavior_is_documented_contract`)
+6. **Config-as-vulnerability / operator input mis-cast as attacker input** — does exploitation
+   require admin to set an insecure config, or a non-default config no real deployment uses? And is
+   the tainted value operator/deployer-controlled configuration (a `base_url`, a model selector, a
+   default service binding) rather than attacker-reachable input? Operator config is not an attack
+   vector — this is the single most common informative in the mined history. (→
+   `required_precondition_already_grants_effect`, `behavior_is_documented_contract`, or
+   `capability_already_possessed`; a default-config-only exposure with no real-deployment impact is
+   at best `HOLD @ proof`)
 7. **Test/example code** — does the vulnerable code ship to production, or is it a fixture/doc/
    dev script?
 8. **Double-counting** — is this the same root cause as another finding under a different surface?

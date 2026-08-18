@@ -69,7 +69,12 @@
     "repository": "",
     "commit": "",
     "scope_evidence": "",
-    "scope_checked_at": ""
+    "scope_checked_at": "",
+    "saturation": {
+      "reports_last_90d": null,
+      "discloses_reports": null,
+      "hot_cluster": false
+    }
   },
   "model": {
     "principals": [],

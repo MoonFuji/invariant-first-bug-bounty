@@ -20,6 +20,11 @@ Cases XA-XF cover the v0.4.3 additions: a schema-5 NO_REPORTABLE_FINDING require
 checkable exhaustion record (tried[] + the five depth_contract fields), and a CONFIRMED
 cold_verify requires a persisted sub-claim decomposition with every link supported.
 
+Cases YA-YE cover v0.4.4 (the immutable commit snapshot + silent-reframe diff; intent
+corpus owed for NO_REPORTABLE_FINDING; all-clean public novelty cannot claim low private
+risk). Cases ZA-ZC cover v0.4.5: a schema-5 REPORTABLE requires a target.saturation
+dedup-visibility assessment, and a non-disclosing program forces private_duplicate_risk high.
+
 Run: python3 scripts/test_validate_candidate.py
 Exit 0 = all cases behaved as specified.
 """
@@ -100,6 +105,7 @@ def baseline():
             "commit": "abc",
             "scope_evidence": "e",
             "scope_checked_at": "2026-08-08",
+            "saturation": {"reports_last_90d": 40, "discloses_reports": True, "hot_cluster": False},
         },
         "model": {
             "principals": ["x"],
@@ -761,6 +767,28 @@ def case_YE_reject():
     return doc, "report", 2
 
 
+def case_ZA_reject():
+    # REPORTABLE with no target.saturation assessment -> reject
+    doc = baseline_v5()
+    del doc["target"]["saturation"]
+    return doc, "report", 2
+
+
+def case_ZB_reject():
+    # non-disclosing program but private-dup risk left at medium -> reject (must be high)
+    doc = baseline_v5()
+    doc["target"]["saturation"]["discloses_reports"] = False
+    return doc, "report", 2
+
+
+def case_ZC_accept():
+    # non-disclosing program, private-dup risk honestly set to high -> accept
+    doc = baseline_v5()
+    doc["target"]["saturation"]["discloses_reports"] = False
+    doc["novelty"]["private_duplicate_risk"] = "high"
+    return doc, "report", 0
+
+
 CASES = [
     ("2  resolution attacks same boundary -> ACCEPT", case_2_accept, None),
     ("K  schema-5 process gates satisfied -> ACCEPT", case_K_accept, None),
@@ -787,6 +815,9 @@ CASES = [
     ("YC committed invariant drift, superseded_by set -> ACCEPT", case_YC_accept, None),
     ("YD NO_REPORTABLE_FINDING, no intent corpus -> REJECT", case_YD_reject, "intent_corpus"),
     ("YE REPORTABLE all-clean novelty, low private risk -> REJECT", case_YE_reject, "cannot claim low"),
+    ("ZA REPORTABLE, no saturation assessment -> REJECT", case_ZA_reject, "requires target.saturation"),
+    ("ZB non-disclosing program, risk not high -> REJECT", case_ZB_reject, "forces private_duplicate_risk high"),
+    ("ZC non-disclosing program, risk high -> ACCEPT", case_ZC_accept, None),
     ("5  commits+issues+PRs evidenced -> ACCEPT", case_5_accept, None),
     ("5b upstream channels explicit -> ACCEPT", case_5b_accept, None),
     ("7b by-design -> KILL@refutation -> ACCEPT", case_7b_accept, None),
