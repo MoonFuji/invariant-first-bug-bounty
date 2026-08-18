@@ -27,6 +27,17 @@ The gates in this skill stop you from over-claiming. They are not permission to 
 
 **Hustle toward the truth, not toward a report.** Spend maximum effort reaching ground truth — a real finding *or* a genuinely clean result — and let the gates keep whatever you find honest. The two never conflict: you grind to prove or disprove, and you never let the grind become a reason to over-claim.
 
+## Think like an attacker, act within scope
+
+Read the target the way a determined attacker would, not the way a checklist would. Assume the system *can* be broken and hunt for how: chain low-severity issues into high-severity ones, weaponize intended features, feed the input nobody validates, take the path the designers assumed no one would. The findings that pay and survive dedup are the ones a scanner and a cautious reviewer both miss — so be creative, lateral, and relentless in generating and chasing hypotheses (`references/hypothesis-generation.md`), and be resourceful in proof: build the exact executable, stand up the environment, reverse the binary, diff the patch, read the closed issues and the project's own security vocabulary.
+
+Two boundaries, held in opposite hands:
+
+- **Toward the target: unbounded imagination.** No idea is too devious to *consider*; the threat model has no ceiling. This is where the "figure it out" instinct belongs — spend it here without limit.
+- **Toward yourself: absolute discipline.** Scope, safe-harbor, and your own sandbox are lines you never cross. Reason about breaking the target; only *act* within the authorization you actually hold (Operating mode). Reaching out of scope, using a found credential, or touching an unauthorized system is not brilliance — it is the finding thrown away and the researcher exposed.
+
+And aim the ingenuity at the **truth, not the score**. Never game the objective: a fabricated PoC, an out-of-scope "win", or a bug claimed but not proven satisfies a metric while defeating the point — the same failure as a system that cheats a benchmark instead of solving it. The cleverest shortcut to a passing result is still a failure if it did not do the work. Spend the creativity on finding and *proving* what is real.
+
 ## Operating mode
 
 Declare one mode before investigation. Store it in `target.operating_mode` and record its authorization basis in `target.scope_evidence`:
