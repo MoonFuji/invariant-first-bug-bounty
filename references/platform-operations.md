@@ -3,6 +3,7 @@
 The technical references cover vulnerability research. This file covers submission and platform operations: scope, eligibility, reputation, disclosure, and payout constraints that can determine whether a technically valid result is accepted. Read only the section for the destination you are using.
 
 ## Contents
+0. Scope & eligibility — verify before you invest
 1. HackerOne
 2. Bugcrowd
 3. YesWeHack
@@ -12,6 +13,15 @@ The technical references cover vulnerability research. This file covers submissi
 7. Safe-harbor & responsible-testing rules (all platforms)
 
 ---
+
+## 0. Scope & eligibility — verify before you invest
+
+Scope, eligibility, PoC policy, and payout are **live state**. Verify them at the destination at hunt start — not from a cached list or from memory. Getting this wrong wastes an entire hunt on a finding that was never submittable.
+
+- **Listed ≠ eligible.** A repository being public, or named somewhere in scope, does not mean the exact asset is marked *eligible for bounty*. Confirm the specific asset is both in-scope and bounty-eligible in the current program policy before investing.
+- **PoC policy can auto-N/A a valid finding.** Some programs ban source-only analysis or require a running-instance / live PoC. A technically correct source-only finding is auto-N/A there regardless of quality. Read the PoC/testing rules first; if source-only proof is not accepted and you cannot reach a live instance within policy, the honest early verdict is `HOLD` or a rotation, not a submission.
+- **Advertised max ≠ real payout.** The headline maximum is not the typical award; some fields are known to misreport. Check average/recent bounty amounts — a low-signal or effectively-unpaid asset may not justify the hunt.
+- **Re-verify live.** Programs change scope, eligibility, and policy without notice. A cached scope file is a discovery hint, not authorization or eligibility — re-check the live program page before you clone or invest.
 
 ## 1. HackerOne
 - **Trial-report cap (account-wide).** New / low-Signal accounts are capped on the number of reports they can have open at once (observed: **4**). Once hit, further submissions are blocked until reports resolve or **Signal/Reputation rises** (~30-day regen window in practice). There is **NO legitimate bypass** — alternate accounts, out-of-band contact, or off-platform submission all violate HackerOne policy and risk a ban. If capped: stage hardened drafts locally and wait, or pivot to another platform (Bugcrowd/YWH). Do not try to route around it.
