@@ -253,7 +253,7 @@ Concluding is a claim like any other: it needs the documented exhaustion, not "I
 | `references/methodology-and-targeting.md` | Target/route selection, invariant modeling, contestability, proof standards, CVSS, report template |
 | `references/hypothesis-generation.md` | Large/unfamiliar target where the highest-value invariant is not obvious — attack modes, pre-mortem, TRIZ, adaptive-attacker ideation |
 | `references/adversarial-self-review.md` | Before proof — Advocate (8 FP patterns) / Cold-verifier / Causal-challenger role rotation against your own finding |
-| `references/worked-examples.md` | Need a concrete pattern — two candidates walked to a terminal verdict (a subtle `KILL @ refutation`, a clean `REPORTABLE`) with decisive fields |
+| `references/worked-examples.md` | Need a concrete pattern — four candidates walked to a terminal verdict (`KILL @ refutation`, `REPORTABLE`, `HOLD @ proof`, `ROUTE_ELSEWHERE @ route`) with decisive fields |
 | `references/bug-class-taxonomy.md` | After choosing an invariant, for relevant source/sink and confirmation patterns |
 | `references/grey-box-dynamic-testing.md` | Live instance, two-account identity diff, control tests, safe-harbor proof |
 | `references/emerging-surfaces-and-techniques.md` | The architecture exposes AI/MCP, CI/CD, supply-chain, cloud, auth, or parser boundaries |
