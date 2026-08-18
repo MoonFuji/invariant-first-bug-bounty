@@ -1,7 +1,48 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "candidate_id": "",
   "decision_history": [],
+  "hypothesis_queue": [],
+  "intent_corpus": {
+    "checked_at": "",
+    "sources": [],
+    "intentional_behaviors": [],
+    "acknowledged_risks": [],
+    "finding_match": "none"
+  },
+  "adversarial_review": {
+    "advocate": {
+      "layers_checked": [],
+      "fp_pattern_hits": [],
+      "strongest_defense": "",
+      "blocks": false
+    },
+    "cold_verify": {
+      "verdict": "UNCERTAIN",
+      "rederived_severity": "",
+      "killed_subclaim": null
+    },
+    "causal": []
+  },
+  "variant_sweep": {
+    "flow_shape": "",
+    "grep_artifact": "",
+    "siblings_checked": [],
+    "alternate_transports_checked": [],
+    "variants_found": []
+  },
+  "patch_bypass": {
+    "base_fix_ref": "",
+    "vectors": {
+      "alternate_entry": "n/a",
+      "config_gated": "n/a",
+      "default_state": "n/a",
+      "compat_branch": "n/a",
+      "parser_diff": "n/a",
+      "missing_norm": "n/a",
+      "sibling_path": "n/a"
+    }
+  },
   "target": {
     "operating_mode": "SOURCE_ONLY",
     "program": "",
