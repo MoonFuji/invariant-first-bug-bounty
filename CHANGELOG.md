@@ -62,6 +62,20 @@ Calibration (stop the discovery front-end from suppressing valid findings or ove
 - `agents/openai.yaml` default prompt is now campaign-oriented (map, rank a queue, one invariant at
   a time, continue until the queue is exhausted) instead of "model one invariant."
 
+Dynamic-proof emphasis (answering a third review's "source-only blindspot" point — its headline
+that the skill is static-only is false: `SOURCE_ONLY` already permits containers/DBs/listeners,
+the validation hierarchy lists them, and the proof gate mandates executable proof. But the name
+primes a static reading and no line said runtime-only classes need runtime proof, so):
+
+- `SOURCE_ONLY` is clarified as an **authorization scope, not a static-analysis mode** — running
+  the code (container, seeded DB, real CI workflow or MCP server, concurrent script) is expected;
+  a static trace is the hypothesis, the local execution is the proof.
+- Validation hierarchy now states "least impact" means least *impact*, not least *effort*: a static
+  trace does not conclusively establish a race/TOCTOU, idempotency/replay, state-machine,
+  parser-differential, or AI-agent/MCP execution flaw — advance to a running level for those.
+- New Red-flags-KEEP-GOING entry: declaring a race/replay/state-machine/CI-agent flaw proven from a
+  static read alone is a proof gap; stand up the container, seed the state, run the PoC.
+
 Deliberately not adopted (diagnosis accepted, prescription declined — recorded so it is not
 re-litigated):
 

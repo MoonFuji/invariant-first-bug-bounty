@@ -44,7 +44,7 @@ And aim the ingenuity at the **truth, not the score**. Never game the objective:
 
 Declare one mode before investigation. Store it in `target.operating_mode` and record its authorization basis in `target.scope_evidence`:
 
-- **`SOURCE_ONLY` (default):** inspect the repository and public documentation; build and run code locally; use local fixtures, containers, accounts, listeners, and test data. Do not send validation traffic to production or third-party systems, use discovered credentials, access another person's data, or extend access beyond the controlled environment.
+- **`SOURCE_ONLY` (default):** inspect the repository and public documentation; build and run code locally; use local fixtures, containers, accounts, listeners, and test data. **This is an authorization scope, not a static-analysis mode:** running the code — spinning up a container, seeding a database, standing up the real CI workflow or MCP server, driving a concurrent script — is expected, and for many bug classes it is the *only* conclusive proof. A static trace is the hypothesis; the local execution is the proof. Do not send validation traffic to production or third-party systems, use discovered credentials, access another person's data, or extend access beyond the controlled environment.
 - **`PROGRAM_HOSTED`:** interact only with the exact hosted assets, accounts, data, methods, and rates explicitly permitted by current program rules. Use accounts and data you own. A repository being public or listed in scope does not by itself authorize hosted testing.
 
 Reason about realistic consequences in either mode, but execute only actions permitted by the declared mode. When authorization is unclear, remain in `SOURCE_ONLY` or set `HOLD`; do not infer permission.
@@ -60,7 +60,7 @@ Use the least-impact artifact that conclusively establishes the security boundar
 5. Researcher-owned self-hosted deployment.
 6. Program-hosted owned account or instance, only in `PROGRAM_HOSTED` when explicitly authorized.
 
-Do not advance when a lower-impact level already establishes the capability delta required by the destination. Reproduce sensitive effects with controlled equivalents: unique canaries instead of real secrets, benign files instead of system data, and local listeners instead of third-party or privileged services.
+Do not advance when a lower-impact level already establishes the capability delta required by the destination. But "least impact" means least *impact*, never least *effort*: a static trace (level 1) does **not** conclusively establish a runtime-manifesting flaw — a race/TOCTOU, an idempotency/replay or state-machine bug, a parser/protocol differential, or an AI-agent/MCP tool-execution effect. For those classes the lower level does not suffice; advance to a running process, seeded container, or self-hosted deployment and reproduce the effect live. Concluding them from source reading alone is a proof gap, not a finished proof. Reproduce sensitive effects with controlled equivalents: unique canaries instead of real secrets, benign files instead of system data, and local listeners instead of third-party or privileged services.
 
 ## Mandatory candidate state
 
@@ -220,6 +220,7 @@ The mirror of the flags above. These are the symptoms of quitting too soon; a ve
 - Concluding "clean" or "no findings" after reading a handful of files, without the five Depth-contract records. → you skimmed; produce them.
 - Rotating off a target because it is hard, slow, or unfamiliar rather than proven dead. → hard is not dead.
 - Reaching for the easy substitute PoC, or a "theoretical" impact, to avoid building the real path. → build the real path.
+- Declaring a race, TOCTOU, idempotency/replay, state-machine, or CI/agent-execution flaw proven from a static read alone. → these manifest only at runtime; stand up the container, seed the state, run the concurrent/replay PoC before calling it proven.
 - Saying "no meaningful capability change" without having traced. → trace first, then judge.
 - Stopping at the first `HOLD` instead of collecting the evidence it names. → the `HOLD` is your next task, not the exit.
 - Reading "the gates let me stop" as "I should stop." → the gates cap over-claiming, not effort.
