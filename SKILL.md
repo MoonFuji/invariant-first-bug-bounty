@@ -1,7 +1,7 @@
 ---
 name: invariant-first-bug-bounty
 description: >-
-  Performs evidence-gated security research for bug bounties and coordinated disclosure. Use when selecting or auditing an in-scope source repository, hosted application, API, mobile app, firmware, library, CLI, SDK, AI/LLM/MCP system, or when validating, routing, deduplicating, scoring, or writing a vulnerability report for HackerOne, Bugcrowd, Intigriti, YesWeHack, huntr, an upstream advisory, or the Internet Bug Bounty.
+  Performs evidence-gated security research for bug bounties and coordinated disclosure. Use when selecting or auditing an in-scope source repository, hosted application, API, mobile app, firmware, library, CLI, SDK, AI/LLM/MCP system, or when validating, routing, deduplicating, scoring, or writing a vulnerability report for HackerOne, Bugcrowd, Intigriti, YesWeHack, huntr, an upstream advisory, or the Internet Bug Bounty. Not for general code review, feature development, refactoring, or test-writing — only authorized security-vulnerability research and disclosure.
 ---
 
 # Invariant-First Bug Bounty

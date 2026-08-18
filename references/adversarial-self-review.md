@@ -1,5 +1,12 @@
 # Adversarial Self-Review (solo role rotation)
 
+## Contents
+- Role 1 — Advocate (five protection layers, the eight false-positive patterns)
+- Role 2 — Cold verifier (zero-context re-derivation, five rejected rationalizations)
+- Role 3 — Causal challenger (intervention / counterfactual / confounder, fragility)
+- Symmetry: doubt must be evidenced too
+- Output contract
+
 The strongest refutation (SKILL step 6, methodology §5.2) tests *the* best benign explanation.
 This file is the complementary *process* control: a structured self-challenge run by rotating
 three roles in sequence and **writing each role's output to the candidate before reading the

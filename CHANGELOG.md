@@ -20,6 +20,13 @@ validator or schema change (the suite is unchanged at 27/27).
   leads rather than exhaustively tracing every one, stopping when the abstraction
   ladder's false-positive rate climbs.
 
+Authoring hygiene (from an agent-skill best-practices review): added a table of
+contents to the two reference files over 100 lines (`hypothesis-generation.md`,
+`adversarial-self-review.md`) so partial reads still see full scope, and a negative
+trigger to the description ("Not for general code review, feature development,
+refactoring, or test-writing") to prevent false activation on non-security tasks.
+Metadata passes both the mgechev and skill-creator validators.
+
 Deliberately not adopted: a filesystem/mtime artifact check on `cold_verify` (still
 gameable, and an mtime window would break the skill's cross-session persistence and
 determinism), and a hard numeric cap on variant siblings (conflicts with the
