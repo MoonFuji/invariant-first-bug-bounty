@@ -23,6 +23,20 @@ scanner's caller-contract blindness would miss, it can still be the highest-expe
 hypothesis in the queue. Rank by expected value; never auto-discard a real, reachable bug for
 lacking cleverness.
 
+**The highest-value archetype, from real payouts: a cross-layer representational mismatch with an
+in-repo correctness oracle.** The findings that actually paid were not new *classes* — they were the
+same value canonicalized at one layer and used raw at another (a nullifier canonicalized at the
+proof/verify layer but deduped in *raw hex* at the DB uniqueness constraint, so equivalent encodings
+each mint a row and the one-human-one-vote invariant collapses). Two properties made them win where
+obvious findings on the *same saturated program* duped: (1) it takes holding two layers' differing
+representations in view at once — a scanner and a cautious reviewer both miss it; (2) the **same repo
+already ships the correct pattern elsewhere** (a sibling path that stores the canonical form), which
+*proves* "oversight, not by-design" instead of arguing it and collapses contestability. Hunt these:
+a representation / normalization / uniqueness value that is canonical in one place and raw in
+another, especially where an in-repo sibling does it right. The mirror-image losing profile is a
+**named-class hardening or missing-sibling finding you are already hedging to Low/conditional** —
+that is the duplicate-prone shape; do not feed it into a swarmed program.
+
 Hypothesis record (keep it terse; store the survivors in `candidate.json.hypothesis_queue`):
 
 - id, title

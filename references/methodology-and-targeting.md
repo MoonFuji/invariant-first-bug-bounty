@@ -22,11 +22,13 @@ Before auditing, record in `candidate.json`:
 - Whether a hosted instance, owned accounts, local deployment, device, or upstream advisory route is available.
 - The project that owns the suspected code and would ship its fix.
 - Payout eligibility and whether the payout rail is usable.
+- **Dedup visibility** in `target.saturation`: whether the program *discloses reports* (can you dedup against its public history at all?), its ~90-day report volume, and whether your bug's class is a hot cluster. This is the single strongest predictor of a duplicate.
 
 Score candidates 1–5 on each axis:
 
 | Axis | Weight | 5 | 1 |
 |---|---:|---|---|
+| Dedup visibility / saturation | ×3 | Disclosing, low-volume program you can dedup against | Non-disclosing, high-volume (r90 ≳ 300), or a hot class-cluster |
 | Exact proof available | ×3 | Live/real path and safe controls available | Only a statement-level trace |
 | Route ownership | ×3 | Destination clearly owns code and proof class | Dependency/ownership ambiguous |
 | Low contestability | ×3 | Product-specific invariant in under-reviewed code | Famous component or fresh-advisory hotspot |
@@ -35,6 +37,8 @@ Score candidates 1–5 on each axis:
 | Payout reliability | ×1 | Paying, responsive, accessible | VDP, blocked rail, or unstable scope |
 
 A recent advisory is a **contestability penalty** unless the candidate proves a different semantic invariant, enforcement path, or affected asset. Fresh feature code and newly added scope can be attractive; a famous fresh CVE is usually crowded.
+
+**Saturation is the dominant duplicate driver — not bug obviousness.** In the mined failure history every adjudicated duplicate sat on a marquee/high-volume or *non-disclosing* program, and even deliberately non-obvious findings duped there; obviousness only amplifies it. Two consequences: (1) prefer a disclosing, low-volume program, where novelty can actually be your edge and a public dedup is even possible; (2) on a non-disclosing or swarmed program, treat `private_duplicate_risk` as `high` by default (the private pool is invisible), and let an obvious-class finding there rotate rather than submit — a valid, reproduced, well-scoped report that duplicates is wasted effort and free disclosure to the program. Novelty is the tie-breaker *within* a well-chosen target, not a substitute for choosing one.
 
 Route classes:
 

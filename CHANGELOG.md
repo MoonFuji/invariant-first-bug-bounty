@@ -1,5 +1,77 @@
 # Changelog
 
+## v0.4.5 — data-driven selection: the duplicate problem
+
+The first release tuned to the hunter's **real failure distribution** rather than reviews or theory.
+Mining 37 adjudicated HackerOne reports (via `GetMyHackerOneReports` + the on-disk writeups and
+memory) found **29 of 37 were regrets: 23 duplicate, 6 informative; 2 paid, 6 live** — so the skill
+had been hardening against *bad* reports while the actual losses were valid, reproduced, well-scoped
+findings that someone else already had. Suite 45 → 48.
+
+The mining was run adversarially and **corrected the leading hypothesis** ("we're not creative
+enough"). Findings:
+
+- **Program/cluster saturation, not obviousness, is the dominant duplicate driver (HIGH confidence).**
+  All 23 duplicates sat on a marquee/high-volume or *non-disclosing* program where the private pool
+  could not be deduped; ~30% were genuinely non-obvious/deep and duped anyway (one was *deliberately
+  engineered* orthogonal to a 30-GHSA cluster and still duped). Obviousness (~65%) only amplifies.
+- **The private-duplicate pool is invisible on non-disclosing/swarmed programs** — public search
+  clean, private pool had it, on every dupe that recorded dedup. The risk was often *predicted at
+  submission and submitted anyway*.
+- **Incomplete-fix of a fresh, marquee CVE is a duplicate trap.** All 5 fresh-2026-CVE incomplete-fixes
+  duped (the embargo crowd swept them); the only live incomplete-fix is of a *2020* CVE on a
+  peripheral gem. The skill's own §2A called incomplete-fix "the cheapest fresh-bug source" with no
+  dup caveat — the data caught the skill's guidance being net-negative on hot targets.
+- **The 2 payouts were a bespoke cross-layer invariant with an in-repo correctness oracle** (a
+  nullifier canonicalized at the proof layer but deduped in raw hex at the DB constraint; the same
+  repo's v4 path already stored it canonically → provable "oversight, not by-design"). On the *same
+  saturated program*, every obvious-class finding duped. Novelty was the tie-breaker within a target.
+- **Informatives (5/6) are "real defect, no new attacker capability / no demonstrated real-deployment
+  impact"** — gates that already exist but were talked past (the canonical case flagged its own
+  disqualifier pre-submit and shipped). The meta-lesson: lessons written to memory are re-learned each
+  quarter, not internalized — hence encoding them as *binding* checks.
+
+Changes:
+
+- **R1 — program-saturation / dedup-visibility gate (highest leverage; the 23/23 lever).** New
+  `target.saturation` block (`reports_last_90d`, `discloses_reports`, `hot_cluster`), required on a
+  schema-5 `REPORTABLE`. A non-disclosing program (`discloses_reports: false` — zero public dedup
+  signal) forces `private_duplicate_risk: high`. New "Dedup visibility / saturation ×3" axis in
+  `methodology-and-targeting.md` §1 and the data note that saturation, not obviousness, drives dupes;
+  `SKILL.md` step 1 records it. Cases ZA-ZC.
+- **R2 — incomplete-fix rebalanced on CVE-age × component-saturation** (`emerging-surfaces` §2A/§2B):
+  fresh + marquee CVE incomplete-fix carries `private_duplicate_risk: high` by construction — pursue
+  only with a *distinct semantic invariant or unaffected asset*; incomplete-fix is EV-positive mainly
+  on old CVEs in cold components. The vein is re-aimed, not removed.
+- **R3 — informative calibration** (prose, no new gate — the gates exist): FP-pattern 6 in
+  `adversarial-self-review.md` sharpened to catch operator/deployer config mis-cast as attacker input
+  (the most common informative), and a "Calibration from real informatives" set added to
+  `worked-examples.md` (operator-config → `KILL @ capability_delta`; default-config-only →
+  `HOLD @ proof`; owned-boundary-no-sink → `KILL @ reachability`).
+- **R4 — the winning archetype promoted** in `hypothesis-generation.md`: hunt a cross-layer
+  representational mismatch with an in-repo correctness oracle; the mirror-image losing profile is a
+  named-class hardening/missing-sibling finding already hedged to Low.
+- **R5 — pre-flight** in `platform-operations.md` §0: resolved-count ≠ saturation; read your own
+  recent dupes first; non-disclosing → `high` and prefer a disclosing target.
+- Also fixed a stale "two candidates" count in `worked-examples.md` itself (four + the calibration set).
+
+What the data said NOT to do (recorded so it is not re-litigated):
+
+- **Do not reframe the skill as "only chase non-obvious."** Target/dedup selection is the lever;
+  novelty is the tie-breaker *within* a well-chosen target. An obvious-class finding on a disclosing,
+  low-volume program is fine. (This also walks back part of the instinct behind the v0.4.2 creativity
+  softening: on a *saturated* target the creativity weight rises toward a gate; on a disclosing one it
+  does not.)
+- **Do not delete the incomplete-fix / patch-bypass vein** — it is net-negative only on fresh/marquee
+  CVEs and still produced a live finding on a cold CVE. Re-aim (R2), don't remove.
+- **Do not add reputation-panic language** — duplicate and informative do not lower Signal (only N/A
+  does); the cost is wasted effort and free disclosure, so the fix is the *pre-investment* filter, not
+  fear at submission.
+
+Deferred: a structured `proof.deployment_impact` enum (`real_managed` required for REPORTABLE) to make
+the demonstrated-impact bar checkable for the informative class — the R3 prose + existing gates cover
+the calibration for now; revisit if informatives persist.
+
 ## v0.4.4 — commitment binding and second-wave review items
 
 Second wave from the same adversarial review. v0.4.3 took its two flagship points; this pass takes
