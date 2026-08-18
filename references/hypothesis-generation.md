@@ -1,5 +1,13 @@
 # Hypothesis Generation
 
+## Contents
+- Hypothesis record and the mandatory creativity signal
+- Eight attack modes (chaining, business-logic, race, second-order, trust-boundary, parser, state-machine, supply-chain)
+- Pre-mortem (backward reasoning)
+- Defensive code is a symptom
+- Contradiction / tension scan (TRIZ)
+- Adaptive-attacker (game-theoretic) framing
+
 The controller is invariant-first: model, then trace. This file feeds the *front* of that
 funnel when a target is large or unfamiliar and the single most valuable invariant is not
 obvious. It produces a **ranked queue of hypotheses**, never candidates. A hypothesis becomes
