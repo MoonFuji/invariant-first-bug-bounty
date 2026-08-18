@@ -3,8 +3,8 @@
 The taxonomy in `bug-class-taxonomy.md` describes bug primitives. This file describes newer architectural surfaces and techniques such as fix-diffing, semantic variant analysis, and secret scanning. Load a section only after the target model shows that its boundary or primitive exists.
 
 ## Contents
-- 1. Emerging surfaces — AI/LLM/MCP · CI/CD · supply-chain · cloud/IAM · modern auth · protocol/parser
-- 2. High-leverage techniques — CVE-diff · incomplete-fix · variant analysis · secret-scanning · recently expanded scope
+- 1. Emerging surfaces — AI/LLM/MCP · CI/CD · supply-chain · cloud/IAM · modern auth · protocol/parser · AI-agent CI actions
+- 2. High-leverage techniques — CVE-diff · incomplete-fix · variant analysis · secret-scanning · recently expanded scope · tooling · history mining
 - 3. Hot vs saturated — the 2026 read
 
 ---
@@ -52,6 +52,18 @@ Pipelines run with high privilege and secrets; misconfig is common and greppable
 - **HTTP request smuggling / desync** (taxonomy §15), HTTP/2 downgrade, **web cache poisoning / deception**.
 - **Parser differentials** — two components parse the same input differently (URL parser vs allow-list → SSRF bypass; JSON dup-key; charset/Unicode normalization; multipart boundary confusion). High-skill, low-competition.
 
+### 1G. AI-agent CI actions (a live, low-competition surface)
+Distinct from the classic CI injection in §1B: here the workflow wires an **AI agent** (e.g. `anthropics/claude-code-action`, `google-github-actions/run-gemini-cli`, `google-gemini/gemini-cli-action`, `openai/codex-action`, `actions/ai-inference`) whose *prompt* is the injection sink. Attacker-controlled contexts that reach it: `github.event.issue.body/.title`, `github.event.comment.body`, `github.event.pull_request.body/.title/.head.ref/.head.sha`, `github.head_ref`. Three flow paths — direct interpolation, an env-var intermediary (no `${{ }}` in the prompt at all), and a runtime fetch (attacker content never appears in the YAML). The vectors §1B does not already cover:
+- **A — env-var intermediary:** an `env:` key set to `${{ github.event.*.body }}`, then the prompt references the var *by name* (`"$ISSUE_BODY"`). No `${{ }}` in the prompt, so a grep for expressions misses it.
+- **C — CLI data fetch:** the prompt tells the agent to `gh issue view` / `gh pr diff` / `gh api` at runtime; only a safe integer (the issue number) is interpolated, tainted content arrives live. `GITHUB_TOKEN` on the AI step is the tell.
+- **E — error-log injection:** `on: workflow_run`/`workflow_dispatch` with inputs like `error_logs`/`build_output`; a "fix these CI failures" prompt ingests attacker-crafted output.
+- **F — subshell expansion in a "restricted" tool list:** an allowlisted safe command still passes args through a shell — `echo $(env)` dumps secrets. Confirmed RCE with Gemini `coreTools: ["run_shell_command(echo)"]` and Claude `--allowedTools "Bash(echo:*)"`. Expandable: echo, cat, printf, tee, head, tail, wc, sort.
+- **G — eval of AI output:** a later step feeds `${{ steps.<ai>.outputs.* }}` into `eval`/`exec`/`$()`/`json.loads()→subprocess`; a prompt-injected response executes as code in a more-privileged step.
+- **H — dangerous sandbox config** (amplifier only): `--allowedTools Bash(*)`, `sandbox: danger-full-access`, `{"sandbox": false}`, `--yolo`.
+- **I — wildcard user allowlist** (amplifier only): `allowed_non_write_users: "*"`, `allow-bots: true`.
+
+(Vectors **B** direct expression injection and **D** `pull_request_target` + PR-head checkout are the "pwn request"/script-injection items already in §1B — treat this list as additive.) Resolve across files: agents hide in composite actions (`./action.yml` `runs.steps[]`) and reusable workflows (`uses: owner/repo/.github/workflows/x.yml@ref`), tracing inputs through `${{ inputs.* }}`. Reject three rationalizations: "no `${{ }}` in the prompt so it's safe" (misses A), "allowed_tools restricts it" (echo→subshell), "only maintainers trigger it" (ignores `pull_request_target`/`issue_comment`). H and I are amplifiers, never standalone findings.
+
 ---
 
 ## 2. Force-multiplier techniques
@@ -67,11 +79,25 @@ A freshly-published fix is a map to where the dangerous code is and what the aut
 - The patch fixes one *entry point* but the vulnerable helper has other callers (→ 2C variant analysis).
 - The patch is on `main` but **not released**, or released but **not back-ported** to LTS/older branches that are still in scope (n-day). A still-present sink at the released artifact's HEAD is reportable even if `main` was "fixed."
 
+Run the fix diff and its callers through seven bypass vectors before calling the class dead; record each in `candidate.json.patch_bypass.vectors`. Any hit is a fresh candidate — trace it as its own invariant (the original CVE proves plausibility, not this target's actor/reachability/impact).
+
+| Vector | Question |
+|---|---|
+| Alternate entry | Does the same sink have other callers the fix didn't touch? |
+| Config-gated | Is the fix conditional on a flag that can be disabled? |
+| Default-state | Does the fix activate only after explicit configuration? |
+| Compat branch | Is there a legacy path that skips the new check? |
+| Parser diff | Do two layers parse the input differently, side-stepping the check? |
+| Missing normalization | Can encoding / case / Unicode bypass the check? |
+| Sibling path | Are analogous operations on sibling resources still vulnerable? |
+
 ### 2C. Variant analysis
 Turn one confirmed bug into a query and sweep for siblings.
 - Write a **Semgrep** rule (or CodeQL query) for the pattern, run it across the repo and the whole org's repos.
 - Example: confirmed an authz check missing on `updateUser` → grep every handler that loads a target by a global key without a tenant predicate (this routinely yields 3–5 sibling endpoints from one root cause).
 - Variants are often *not* duplicates of the original report and pay separately or raise severity (systemic finding).
+
+State the root cause as a search pattern: *"[untrusted data] reaches [dangerous op] without [required protection]."* Then climb the **abstraction ladder** one rung at a time, reviewing every new match and reverting when the false-positive rate exceeds ~50%: L0 exact code (confirm the bug) → L1 replace variable names with metavariables (copy-paste clones) → L2 generalize structure (component-wide) → L3 taint source→sink (broad, high FP). Also run the **vulnerability-class expansion** — one root cause manifests across semantic siblings: if the bug is on `isAuthenticated`, also check `isAdmin`/`isActive`/`isVerified`; if on `userId`, also `ownerId`/`creatorId`/`authorId`; watch for null-equality bypass (`None == None` → True defeats an owner check when both sides can be null) and doc-vs-code inversion (a function named `deny`/`restrict` that returns True when the user *has* permission). Search the whole repo/org root, not just the module. The alternate-transport half of this sweep (HTTP → WebSocket/gRPC/GraphQL/CLI/queue) is in the SKILL depth contract.
 
 ### 2D. Secret-scanning recon
 - **trufflehog** / **gitleaks** across repos AND full git history.
@@ -87,6 +113,14 @@ Turn one confirmed bug into a query and sweep for siblings.
 - **Semgrep** (fast, writeable rules, great for variant analysis) and **CodeQL** (deep dataflow/taint, best for source→sink across a big codebase) on the cloned repo.
 - Language-native: `gosec`, `bandit` (Python), `brakeman` (Rails), `phpcs`/`psalm` taint, `npm audit`/`osv-scanner` for known-CVE deps in scope.
 - Use these for the *first pass* (sink discovery), then human-reason the authz/logic/race classes the tools can't see. Tools find injection-shaped bugs; you find the reasoning bugs that pay more and dup less.
+
+### 2G. History mining & silent-fix detection
+§2A starts from a *published* advisory. This finds the fixes that never got one — so there is no dedup pool yet. Never iterate every commit; use pickaxe search over recent history.
+- **Learn the project's own security vocabulary first:** grep HEAD for its `validate_*` / `sanitize_*` / `authorize` / `*Guard*` names, then use those as extra `git log -S` targets.
+- **Silent security fix (3-signal):** signal A = the diff adds protective patterns; signal B = the commit message is generic ("refactor"/"cleanup"/"fix") with no security keywords; signal C = it touches a security-critical path. All three → reconstruct the pre-fix vulnerable state and attack it. Still confirm the flaw is live on the current default branch (novelty gate) — a silent fix may already be released.
+- **Reverted / re-weakened control:** `git log -S "<code>" --all -p` for a guard added then removed, or a fix reverted for compatibility; `git log -p -G` then grep removed `isAdmin`/`requireAuth`/`csrf`.
+- **Secret archaeology:** `git log --diff-filter=D` for deleted `.env`/`.pem`/`.key`; `-S 'AKIA'`/`ghp_` for committed-then-removed credentials (still valid until rotated — see §2D).
+- **Structural recurrence:** a component patched *multiple times for the same bug class* signals a structurally incomplete fix; the next instance of the class is probably still there — the highest-priority patch-bypass target (§2B).
 
 ---
 
