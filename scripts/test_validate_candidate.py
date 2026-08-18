@@ -16,6 +16,10 @@ corpus, and an FP-pattern rebuttal with no evidence each forbid REPORTABLE. The
 report-stage accepts are migrated to schema 5; legacy schema-3/4 candidates still
 validate at the model and decision stages (legacy, G-J).
 
+Cases XA-XF cover the v0.4.3 additions: a schema-5 NO_REPORTABLE_FINDING requires a
+checkable exhaustion record (tried[] + the five depth_contract fields), and a CONFIRMED
+cold_verify requires a persisted sub-claim decomposition with every link supported.
+
 Run: python3 scripts/test_validate_candidate.py
 Exit 0 = all cases behaved as specified.
 """
@@ -204,6 +208,11 @@ def v5_process_blocks():
                 "verdict": "CONFIRMED",
                 "rederived_severity": "high",
                 "killed_subclaim": None,
+                "subclaims": [
+                    {"claim": "attacker controls the report id", "status": "supported"},
+                    {"claim": "id reaches the query with no tenant filter", "status": "supported"},
+                    {"claim": "the row is returned cross-tenant", "status": "supported"},
+                ],
             },
             "causal": [
                 {
@@ -231,6 +240,45 @@ def baseline_v5():
     doc = baseline()
     doc["schema_version"] = 5
     doc.update(v5_process_blocks())
+    return doc
+
+
+def baseline_nrf():
+    """A schema-5 NO_REPORTABLE_FINDING candidate with a full exhaustion record: golden ACCEPT."""
+    doc = baseline_v5()
+    doc["threat_model"]["capability_before"] = "cannot read other tenants"
+    doc["threat_model"]["capability_after"] = "cannot read other tenants"
+    doc["threat_model"]["strongest_refutation"] = {
+        "claim": "the handler scopes the query to the caller's tenant",
+        "kind": "non_terminal",
+        "evidence": "ReportController#show applies .where(org_id: current_user.org_id)",
+        "resolution": "",
+        "resolution_source": "none",
+        "result": "confirmed",
+    }
+    doc["exhaustion"] = {
+        "tried": [
+            "traced GET /reports/:id end to end",
+            "checked the destroy sibling sharing the scope",
+            "grepped the flow shape repo-wide",
+        ],
+        "untried_closed": [],
+        "depth_contract": {
+            "entrypoint": "GET /api/reports/:id",
+            "invariant_enforcement": "ReportController#show tenant scope",
+            "trace": "params[:id] -> Report.where(org_id:).find -> render",
+            "sibling_checked": "destroy action shares the same scope",
+            "defeated_counterexample": "cross-tenant id returns 404 under the tenant filter",
+        },
+    }
+    doc["decision"] = {
+        "verdict": "NO_REPORTABLE_FINDING",
+        "gate": "refutation",
+        "failed_gates": [],
+        "missing_evidence": [],
+        "reason": "tenant scope holds on the traced path and its sibling",
+        "decided_at": "2026-08-18",
+    }
     return doc
 
 
@@ -627,6 +675,49 @@ def case_W_reject():
     return doc, "report", 2
 
 
+def case_XA_accept():
+    # schema-5 NO_REPORTABLE_FINDING with a full exhaustion record -> accept
+    return baseline_nrf(), "decision", 0
+
+
+def case_XB_reject():
+    # NO_REPORTABLE_FINDING with the exhaustion block removed -> reject
+    doc = baseline_nrf()
+    del doc["exhaustion"]
+    return doc, "decision", 2
+
+
+def case_XC_reject():
+    # NO_REPORTABLE_FINDING with an incomplete depth_contract -> reject
+    doc = baseline_nrf()
+    doc["exhaustion"]["depth_contract"]["trace"] = ""
+    return doc, "decision", 2
+
+
+def case_XD_reject():
+    # NO_REPORTABLE_FINDING with an empty tried[] -> reject
+    doc = baseline_nrf()
+    doc["exhaustion"]["tried"] = []
+    return doc, "decision", 2
+
+
+def case_XE_reject():
+    # CONFIRMED cold_verify with no sub-claim decomposition -> reject
+    doc = baseline_v5()
+    doc["adversarial_review"]["cold_verify"]["subclaims"] = []
+    return doc, "report", 2
+
+
+def case_XF_reject():
+    # CONFIRMED cold_verify but one sub-claim is unsupported -> reject
+    doc = baseline_v5()
+    doc["adversarial_review"]["cold_verify"]["subclaims"] = [
+        {"claim": "attacker controls X", "status": "supported"},
+        {"claim": "X reaches the sink unsanitized", "status": "unsupported"},
+    ]
+    return doc, "report", 2
+
+
 CASES = [
     ("2  resolution attacks same boundary -> ACCEPT", case_2_accept, None),
     ("K  schema-5 process gates satisfied -> ACCEPT", case_K_accept, None),
@@ -642,6 +733,12 @@ CASES = [
     ("U  advocate searched no layers -> REJECT", case_U_reject, "layers_checked"),
     ("V  intent corpus with no sources -> REJECT", case_V_reject, "intent_corpus.sources"),
     ("W  FP rebuttal with no evidence locator -> REJECT", case_W_reject, "needs evidence"),
+    ("XA NO_REPORTABLE_FINDING + exhaustion record -> ACCEPT", case_XA_accept, None),
+    ("XB NO_REPORTABLE_FINDING, no exhaustion block -> REJECT", case_XB_reject, "requires an exhaustion block"),
+    ("XC NO_REPORTABLE_FINDING, incomplete depth_contract -> REJECT", case_XC_reject, "depth_contract.trace"),
+    ("XD NO_REPORTABLE_FINDING, empty tried[] -> REJECT", case_XD_reject, "exhaustion.tried"),
+    ("XE CONFIRMED cold_verify, no subclaims -> REJECT", case_XE_reject, "cold_verify.subclaims"),
+    ("XF CONFIRMED cold_verify, unsupported subclaim -> REJECT", case_XF_reject, "not supported"),
     ("5  commits+issues+PRs evidenced -> ACCEPT", case_5_accept, None),
     ("5b upstream channels explicit -> ACCEPT", case_5b_accept, None),
     ("7b by-design -> KILL@refutation -> ACCEPT", case_7b_accept, None),

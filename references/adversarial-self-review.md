@@ -93,8 +93,15 @@ Five rationalizations that are auto-`DISPROVED` signals:
 5. "The defense brief is weaker than the prosecution." (a plausible defense demands reproduction
    before you confirm)
 
-Record `adversarial_review.cold_verify = {verdict, rederived_severity, killed_subclaim}`. A
-`DISPROVED` verdict forbids `REPORTABLE`.
+Record `adversarial_review.cold_verify = {verdict, rederived_severity, killed_subclaim, subclaims}`,
+where `subclaims[]` persists the A/B/C decomposition, each `{claim, status: supported|unsupported}`.
+A `DISPROVED` verdict forbids `REPORTABLE`; so does a `CONFIRMED` verdict with fewer than two
+sub-claims or any `unsupported` link — the finding fails at that link. Writing the decomposition
+*before* the verdict is the point: a bare `CONFIRMED` is a self-graded checkbox, and a self-grader
+is least reliable exactly when its own trace is subtly wrong. The explicit decomposition is what
+makes the verdict cost something; an independent verifier or the deterministic validator — neither
+of which shares your trace — removes that bias rather than merely reducing it, which is why the
+gates are cleared by artifacts and the validator, never by the self-verdict alone.
 
 ## Role 3 — Causal challenger (test every protection you rely on)
 
@@ -139,7 +146,8 @@ in evidence *and* fails to find a path that skips it.
                   "fp_pattern_hits": [{ "pattern": "", "rebuttal": "", "evidence": "" }],
                   "strongest_defense": "", "blocks": false },
   "cold_verify":{ "verdict": "CONFIRMED|DISPROVED|UNCERTAIN", "rederived_severity": "",
-                  "killed_subclaim": null },
+                  "killed_subclaim": null,
+                  "subclaims": [{ "claim": "attacker controls X", "status": "supported|unsupported" }] },
   "causal":     [{ "protection": "", "intervention": "", "counterfactual": "", "confounder": "",
                    "fragility": "fragile|moderate|robust" }]
 }
@@ -147,6 +155,7 @@ in evidence *and* fails to find a path that skips it.
 
 At `REPORTABLE`, the report-stage validator requires this block to show the pass actually ran, not
 just that it is present: `advocate` with a non-empty `layers_checked` and `strongest_defense` and
-`blocks: false`; `cold_verify.verdict == "CONFIRMED"` with a non-empty `rederived_severity` and a
-null `killed_subclaim`; and every `advocate.fp_pattern_hits[]` entry carrying both a non-empty
-`rebuttal` and an `evidence` locator (a file:line control, artifact, or policy citation).
+`blocks: false`; `cold_verify.verdict == "CONFIRMED"` with a non-empty `rederived_severity`, a
+null `killed_subclaim`, and a `subclaims[]` decomposition (≥2 links, each `supported`); and every
+`advocate.fp_pattern_hits[]` entry carrying both a non-empty `rebuttal` and an `evidence` locator (a
+file:line control, artifact, or policy citation).

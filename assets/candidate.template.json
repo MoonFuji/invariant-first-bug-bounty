@@ -20,9 +20,21 @@
     "cold_verify": {
       "verdict": "UNCERTAIN",
       "rederived_severity": "",
-      "killed_subclaim": null
+      "killed_subclaim": null,
+      "subclaims": []
     },
     "causal": []
+  },
+  "exhaustion": {
+    "tried": [],
+    "untried_closed": [],
+    "depth_contract": {
+      "entrypoint": "",
+      "invariant_enforcement": "",
+      "trace": "",
+      "sibling_checked": "",
+      "defeated_counterexample": ""
+    }
   },
   "variant_sweep": {
     "flow_shape": "",

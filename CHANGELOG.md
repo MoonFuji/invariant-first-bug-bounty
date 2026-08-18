@@ -1,5 +1,64 @@
 # Changelog
 
+## v0.4.3 — checkable exhaustion and cold-verify decomposition
+
+Answers a fourth, adversarial review. Two of its points were the load-bearing ones — they decide
+whether the honesty philosophy is enforced or merely literary — and both are adopted; the rest are
+triaged below (some already handled, some deferred, one overstated). Suite 34 → 40; schema 5,
+report gates extended; no new terminal verdicts.
+
+The design rule throughout is Anthropic's own: match the *degree of freedom* to the *fragility* of
+the step — low-freedom scripts/validation for consistency-critical operations, high-freedom prose
+for open-ended ones. Terminal honesty is fragile and consistency-critical, so it moves out of the
+KEEP-GOING prose list and into checkable schema.
+(https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview)
+
+Checkable exhaustion (review #1 — "'exhaust before you conclude' is unenforced theater"; correct):
+
+- `NO_REPORTABLE_FINDING` was the weakest terminal to fake — it required only a confirmed refutation
+  and equal capabilities, with the five Depth-contract records living in prose. A schema-5
+  `NO_REPORTABLE_FINDING` now requires an `exhaustion` block: a non-empty `tried[]` and all five
+  `depth_contract` fields (`entrypoint`, `invariant_enforcement`, `trace`, `sibling_checked`,
+  `defeated_counterexample`). This does not *prove* exhaustion — prose is still prose — but it raises
+  the floor from a bare verdict to an articulated, auditable one, symmetric with how `REPORTABLE`
+  must articulate its evidence. Grounding: agents skip needed work and ignore evidence under
+  pressure (ToolFailBench, arXiv 2607.04686, "Tool-Skip"/"Result-Ignore"), and long-horizon
+  benchmarks grade dense sub-tasks precisely because a final self-report hides intermediate work
+  (Long-Horizon-Terminal-Bench, arXiv 2607.08964).
+
+Cold-verify decomposition (review #2 — "CONFIRMED is a self-signed certificate"; sharpest point):
+
+- A `REPORTABLE` `cold_verify.verdict == "CONFIRMED"` now requires a persisted `subclaims[]`
+  decomposition (≥2, each `{claim, status}`, every link `supported`) — the A/B/C chain the cold
+  verifier is already told to build (attacker controls X; X reaches Y unsanitized; Y causes Z).
+  Grounding: self-preference bias is real (Panickssery et al., arXiv 2404.13076) and, critically,
+  *worst exactly when the model's own output is wrong* — "stronger models struggle more to
+  recognize when they are wrong" — while "generating a long Chain-of-Thought before evaluation
+  effectively reduces the harmful self-preference" (Chen et al., arXiv 2504.03846). So the fix is to
+  force the explicit decomposition *before* the verdict, and to keep clearing gates by artifacts and
+  the deterministic validator, not the self-grade — an external check makes the bias vanish (Guey &
+  Bougault, arXiv 2606.20093). The effect is also partly confounded by evaluator quality, so this is
+  a structural mitigation, not a claim of "narcissism" (Roytburg et al., arXiv 2601.22548).
+- `references/adversarial-self-review.md` updated: persist `subclaims`, and the sourced rationale
+  that an independent verifier / the validator removes the bias the self-grade cannot.
+
+Worked-examples count (review #7 — correct, a credibility nick): the v0.4.1 entry said "two"
+worked examples; the file has four (`KILL`, `REPORTABLE`, `HOLD`, `ROUTE_ELSEWHERE`). Entry fixed.
+
+Triage of the remaining review points (recorded so they are not re-litigated):
+
+- **Already handled — #5 "hard is not dead vs EV rotation."** The Depth contract already permits
+  rotation "when contestability makes the expected value poor." "Hard is not dead" bars *difficulty*
+  as a rotation trigger, not *EV* — they are not in conflict. No change; the review missed the
+  existing EV exit.
+- **Already partly gated — #6 novelty/private-duplicate.** The validator already rejects
+  `private_duplicate_risk == "unknown"` at `REPORTABLE`. Forcing `>= medium` whenever every public
+  check is `no_match` is a reasonable further tightening but P2 — deferred.
+- **Deferred (P2/P3, real but lower-leverage; batching now would bloat the schema):** #3 persist a
+  commit snapshot and diff the invariant string to catch silent reframes; #4 a stage-timing table
+  and moving the intent-corpus requirement earlier than report; #8 lead the description with trigger
+  conditions over the asset taxonomy; #10 a hard ideation cap. Each is a candidate for a later pass.
+
 ## v0.4.2 — campaign continuation and self-review anti-gaming
 
 Answers two external design reviews. Their shared diagnosis is correct and adopted: the skill was
@@ -113,9 +172,10 @@ self-recognition, and worked examples):
   for a substitute client, editing a field to pass the gate, submitting under
   rent/sunk-cost pressure) so the agent catches itself, complementing the reactive
   rationalizations table.
-- New `references/worked-examples.md`: two candidates walked to a terminal verdict
-  with decisive fields — a subtle `KILL @ refutation` (owned boundary vs.
-  integrator misuse) and a clean `REPORTABLE` (cross-tenant read) — because a
+- New `references/worked-examples.md`: four candidates walked to a terminal verdict
+  with decisive fields — a subtle `KILL @ refutation` (owned boundary vs. integrator
+  misuse), a clean `REPORTABLE` (cross-tenant read), a `HOLD @ proof` (primitive
+  fidelity), and a `ROUTE_ELSEWHERE @ route` (upstream owns the fix) — because a
   concrete pattern teaches the discipline better than rules alone.
 
 Self-review guardrails:
