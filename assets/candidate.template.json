@@ -2,6 +2,13 @@
   "schema_version": 5,
   "candidate_id": "",
   "decision_history": [],
+  "commit": {
+    "mode": "",
+    "invariant": "",
+    "expected_delta": "",
+    "committed_at": "",
+    "superseded_by": ""
+  },
   "hypothesis_queue": [],
   "intent_corpus": {
     "checked_at": "",

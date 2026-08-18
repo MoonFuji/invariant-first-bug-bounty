@@ -674,6 +674,92 @@ def validate_exhaustion(document, errors):
                 errors.append(f"exhaustion.depth_contract.{field} must be a non-empty string")
 
 
+def validate_commit(document, errors):
+    """Schema-5: the pre-hunt commitment must be persisted and honored.
+
+    "Commit before you hunt" names the mode, invariant, and expected capability
+    delta up front. Persisting them as an immutable snapshot lets a silent reframe --
+    switching to a different invariant mid-hunt without saying so -- be caught by
+    diffing the committed invariant against the current one: a change with no
+    decision_history entry and no recorded supersession is exactly the drift the
+    spoken commitment was meant to make visible.
+    """
+    version = value_at(document, "schema_version")
+    if not isinstance(version, int) or version < 5:
+        return
+    commit = value_at(document, "commit")
+    if not isinstance(commit, dict):
+        errors.append(
+            "schema 5 requires a commit block persisting the pre-hunt commitment "
+            "(mode, invariant, expected_delta, committed_at)"
+        )
+        return
+    for field in ("mode", "invariant", "expected_delta", "committed_at"):
+        value = commit.get(field)
+        if not isinstance(value, str) or not value.strip():
+            errors.append(f"commit.{field} must be a non-empty string (persist it before recon)")
+    committed_invariant = commit.get("invariant")
+    current_invariant = value_at(document, "model.security_invariant")
+    history = value_at(document, "decision_history")
+    superseded = commit.get("superseded_by")
+    if (
+        isinstance(committed_invariant, str)
+        and committed_invariant.strip()
+        and isinstance(current_invariant, str)
+        and current_invariant.strip()
+        and committed_invariant.strip() != current_invariant.strip()
+        and not (isinstance(history, list) and history)
+        and not (isinstance(superseded, str) and superseded.strip())
+    ):
+        errors.append(
+            "the committed invariant differs from model.security_invariant but no reframe was "
+            "recorded; append to decision_history or set commit.superseded_by -- a silent reframe "
+            "defeats the commitment device"
+        )
+
+
+def require_intent_corpus_present(document, errors):
+    """Schema-5: the intent corpus (workflow step 1) must exist by the time a 'clean'
+    conclusion is reached, not be back-filled at report time. Requiring it for
+    NO_REPORTABLE_FINDING means the by-design question was confronted early -- where a
+    match is a KILL @ refutation -- rather than as a report-stage retrofit."""
+    version = value_at(document, "schema_version")
+    if not isinstance(version, int) or version < 5:
+        return
+    intent = value_at(document, "intent_corpus")
+    if not isinstance(intent, dict):
+        errors.append(
+            "schema 5 NO_REPORTABLE_FINDING requires an intent_corpus, built in step 1, not back-filled"
+        )
+        return
+    checked_at = intent.get("checked_at")
+    if not isinstance(checked_at, str) or not checked_at.strip():
+        errors.append("NO_REPORTABLE_FINDING requires intent_corpus.checked_at (the corpus is owed by step 1)")
+    sources = intent.get("sources")
+    if not isinstance(sources, list) or not sources:
+        errors.append("NO_REPORTABLE_FINDING requires intent_corpus.sources (record what you read)")
+
+
+def novelty_has_positive_signal(document):
+    """True if any novelty check or upstream channel surfaced a closest_match. Absence of
+    any match is the *weakest* evidence about the invisible private-duplicate pool, not the
+    strongest -- so an all-clean public search cannot support a low private-duplicate risk."""
+    checks = value_at(document, "novelty.checks")
+    if not isinstance(checks, list):
+        return False
+    for check in checks:
+        if not isinstance(check, dict):
+            continue
+        if isinstance(check.get("closest_match"), dict):
+            return True
+        channels = check.get("channels")
+        if isinstance(channels, list):
+            for channel in channels:
+                if isinstance(channel, dict) and isinstance(channel.get("closest_match"), dict):
+                    return True
+    return False
+
+
 def validate_schema5_report_gates(document, errors):
     """Hard REPORTABLE gates introduced with schema 5. Applies only to schema >= 5.
 
@@ -966,6 +1052,7 @@ def validate_decision(document, errors):
         validate_common(document, errors)
 
     require_text(document, "decision.decided_at", errors)
+    validate_commit(document, errors)
 
     # A confirmed terminal refutation must land at the gate its kind implies.
     rv = refutation_view(document)
@@ -997,6 +1084,7 @@ def validate_decision(document, errors):
             errors.append("NO_REPORTABLE_FINDING requires refutation result confirmed")
         require_equal_capabilities(document, errors, "NO_REPORTABLE_FINDING")
         validate_exhaustion(document, errors)
+        require_intent_corpus_present(document, errors)
     elif verdict == "REPORTABLE":
         require_capability_delta(document, errors)
         view = refutation_view(document)
@@ -1034,6 +1122,15 @@ def validate_decision(document, errors):
             errors.append("REPORTABLE requires novelty.classification distinct")
         if value_at(document, "novelty.private_duplicate_risk") == "unknown":
             errors.append("REPORTABLE requires assessed private_duplicate_risk")
+        if (
+            value_at(document, "novelty.private_duplicate_risk") == "low"
+            and not novelty_has_positive_signal(document)
+        ):
+            errors.append(
+                "REPORTABLE with every public novelty check clean cannot claim low "
+                "private_duplicate_risk; absence of public matches is not evidence about the "
+                "invisible private pool -- assess it medium or high"
+            )
         validate_schema5_report_gates(document, errors)
 
 

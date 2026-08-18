@@ -1,5 +1,51 @@
 # Changelog
 
+## v0.4.4 — commitment binding and second-wave review items
+
+Second wave from the same adversarial review. v0.4.3 took its two flagship points; this pass takes
+the strongest remaining ones — the pattern is the same throughout: an existing prose device becomes
+a checkable one (degrees-of-freedom rule), and the skill's own stated epistemics become validator
+rules. Suite 40 → 45; schema 5, `commit` block added; no new terminal verdicts.
+
+Commitment binding (review #3 — "commit-before-hunt does not bind"; correct, the sharpest deferred
+item). "Commit before you hunt" told the agent to "write into candidate.json" a commitment, but
+there was no block to write it to and nothing checked it — an announcement, not a binding.
+
+- New `commit` block: the immutable pre-hunt snapshot `{mode, invariant, expected_delta,
+  committed_at, superseded_by}`. Every schema-5 candidate must carry it at decision/report.
+- The **silent reframe** the review names as "the common failure" is now caught: if
+  `commit.invariant` differs from `model.security_invariant` with no `decision_history` entry and no
+  `commit.superseded_by`, the validator rejects it. Switching to a different bug than the one you
+  committed to is no longer invisible.
+
+Intent corpus owed early (review #4a). A schema-5 `NO_REPORTABLE_FINDING` now requires a present
+`intent_corpus` (`checked_at` + `sources`), not only `REPORTABLE`. The by-design question is
+confronted where a match is a `KILL @ refutation`, not back-filled as `finding_match: none` at report
+polish time.
+
+Private-duplicate honesty (review #6). The validator already rejected `private_duplicate_risk ==
+"unknown"` at `REPORTABLE`; it now also rejects `low` when **every** public novelty check came back
+clean. Absence of public matches is the weakest evidence about the invisible private pool, not the
+strongest — so an all-clean search cannot be labelled low private-duplicate risk. This encodes the
+skill's own line ("no public match is weak evidence") as a check.
+
+Process scaling and EV rotation (reviews #4b, #5 — prose, no schema):
+
+- `SKILL.md` **Scale the process to the target**: the full stack fits a large product; on a small
+  single-surface `SOURCE_ONLY` library the ideation queue / variant sweep / patch-bypass are often a
+  one-line "n/a" while the core gates (capability delta, refutation, proof, novelty) always hold.
+  Answers the "heavy stack → cargo-cult on toy targets, skip on hard ones" critique.
+- Depth contract sharpened: EV-based rotation (proven low-value, with a higher-EV item queued) is
+  legitimate **only when the rationale is recorded**; difficulty-based rotation is the sunk-cost
+  failure the STOP flags name. `hypothesis_queue` entries gain a `parked` status + `park_reason` so an
+  EV-park is durable and auditable, never "too hard."
+
+Still deferred (recorded, not re-litigated): #4c a stage→requirement table (it would duplicate the
+validator, the single source of truth, and drift from it); the #2 independent-verifier marker (the
+prose already recommends one, and a warn on every self-rotated REPORTABLE would be noise); #8
+description rewrite (it passes both metadata validators and triggers correctly); #10 a hard ideation
+cap (an arbitrary N; "promote exactly one, no second until terminal" already bounds it).
+
 ## v0.4.3 — checkable exhaustion and cold-verify decomposition
 
 Answers a fourth, adversarial review. Two of its points were the load-bearing ones — they decide
