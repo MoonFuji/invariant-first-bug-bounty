@@ -196,7 +196,6 @@ def v5_process_blocks():
         "commit": {
             "mode": "SOURCE_ONLY",
             "invariant": "inv",
-            "expected_delta": "attacker reads another tenant's report",
             "committed_at": "2026-08-08",
             "superseded_by": "",
         },
@@ -775,9 +774,10 @@ def case_ZA_reject():
 
 
 def case_ZB_reject():
-    # non-disclosing program but private-dup risk left at medium -> reject (must be high)
+    # non-disclosing program claiming LOW private-dup risk -> reject (must be >= medium)
     doc = baseline_v5()
     doc["target"]["saturation"]["discloses_reports"] = False
+    doc["novelty"]["private_duplicate_risk"] = "low"
     return doc, "report", 2
 
 
@@ -787,6 +787,46 @@ def case_ZC_accept():
     doc["target"]["saturation"]["discloses_reports"] = False
     doc["novelty"]["private_duplicate_risk"] = "high"
     return doc, "report", 0
+
+
+def case_ZG_accept():
+    # non-disclosing program, bespoke low-collision finding at medium risk -> accept (>= medium ok)
+    doc = baseline_v5()
+    doc["target"]["saturation"]["discloses_reports"] = False
+    doc["novelty"]["private_duplicate_risk"] = "medium"
+    return doc, "report", 0
+
+
+def case_ZD_accept():
+    # schema-5 KILL @ scope dies before an invariant is committed -> commit.invariant not required
+    doc = baseline_v5()
+    doc["model"]["security_invariant"] = ""
+    doc["commit"]["invariant"] = ""
+    doc["decision"] = {
+        "verdict": "KILL",
+        "gate": "scope",
+        "failed_gates": ["scope"],
+        "missing_evidence": [],
+        "reason": "asset not bounty-eligible",
+        "decided_at": "2026-08-18",
+    }
+    return doc, "decision", 0
+
+
+def case_ZE_reject():
+    # invariant reframed, only an unrelated decision_history entry, no superseded_by -> reject (S1)
+    doc = baseline_v5()
+    doc["commit"]["invariant"] = "a different invariant I started on"
+    doc["decision_history"] = [{"verdict": "HOLD", "gate": "proof", "note": "earlier verdict"}]
+    doc["commit"]["superseded_by"] = ""
+    return doc, "report", 2
+
+
+def case_ZF_reject():
+    # committed mode differs from the current operating mode -> silent mode switch -> reject
+    doc = baseline_v5()
+    doc["commit"]["mode"] = "PROGRAM_HOSTED"
+    return doc, "report", 2
 
 
 CASES = [
@@ -811,13 +851,17 @@ CASES = [
     ("XE CONFIRMED cold_verify, no subclaims -> REJECT", case_XE_reject, "cold_verify.subclaims"),
     ("XF CONFIRMED cold_verify, unsupported subclaim -> REJECT", case_XF_reject, "not supported"),
     ("YA schema-5 missing commit block -> REJECT", case_YA_reject, "requires a commit block"),
-    ("YB committed invariant drift, no reframe -> REJECT", case_YB_reject, "silent reframe"),
+    ("YB committed invariant drift, no reframe -> REJECT", case_YB_reject, "commit.superseded_by"),
     ("YC committed invariant drift, superseded_by set -> ACCEPT", case_YC_accept, None),
     ("YD NO_REPORTABLE_FINDING, no intent corpus -> REJECT", case_YD_reject, "intent_corpus"),
     ("YE REPORTABLE all-clean novelty, low private risk -> REJECT", case_YE_reject, "cannot claim low"),
-    ("ZA REPORTABLE, no saturation assessment -> REJECT", case_ZA_reject, "requires target.saturation"),
-    ("ZB non-disclosing program, risk not high -> REJECT", case_ZB_reject, "forces private_duplicate_risk high"),
-    ("ZC non-disclosing program, risk high -> ACCEPT", case_ZC_accept, None),
+    ("ZA REPORTABLE, no saturation assessment -> REJECT", case_ZA_reject, "target.saturation"),
+    ("ZB non-disclosing program, low risk -> REJECT", case_ZB_reject, "cannot be claimed"),
+    ("ZC non-disclosing program, high risk -> ACCEPT", case_ZC_accept, None),
+    ("ZG non-disclosing program, medium risk -> ACCEPT", case_ZG_accept, None),
+    ("ZD schema-5 KILL @ scope, no committed invariant -> ACCEPT", case_ZD_accept, None),
+    ("ZE invariant reframe + junk history, no superseded_by -> REJECT", case_ZE_reject, "commit.superseded_by"),
+    ("ZF committed mode != operating mode -> REJECT", case_ZF_reject, "operating-mode switch"),
     ("5  commits+issues+PRs evidenced -> ACCEPT", case_5_accept, None),
     ("5b upstream channels explicit -> ACCEPT", case_5b_accept, None),
     ("7b by-design -> KILL@refutation -> ACCEPT", case_7b_accept, None),

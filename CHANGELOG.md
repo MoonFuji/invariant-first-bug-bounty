@@ -72,6 +72,30 @@ Deferred: a structured `proof.deployment_impact` enum (`real_managed` required f
 the demonstrated-impact bar checkable for the informative class — the R3 prose + existing gates cover
 the calibration for now; revisit if informatives persist.
 
+Pre-release hardening (an independent adversarial code review + a second data-mine of the paying vs.
+duping incomplete-fixes; suite 48 → 52):
+
+- **Fixed a blocker in the v0.4.4 commit gate.** It required `commit.invariant` on *every* schema-5
+  decision, but a `KILL @ scope` (the most common outcome) dies before an invariant is promoted —
+  forcing fabrication. `commit.invariant` is now required only once a model exists; `mode`/`committed_at`
+  stay required early, resolving the SKILL "before recon" vs. step-3 contradiction. (case ZD)
+- **Closed the silent-reframe bypass.** The reframe check was disabled by any unrelated
+  `decision_history` entry; it now requires `commit.superseded_by` specifically. (case ZE)
+- **`commit.mode` now earns its place** — diffed against `target.operating_mode` so a silent mode
+  switch is rejected; the unused `commit.expected_delta` was dropped per the skill's own anti-cargo-cult
+  rule. (case ZF)
+- **Non-disclosing program → `private_duplicate_risk` ≥ `medium`** (was: exactly `high`). Forcing
+  `high` mis-stamped genuinely-novel findings on legitimate private programs; a bespoke low-collision
+  finding may be `medium`. (cases ZB/ZC/ZG)
+- **Incomplete-fix variant-character tiers** (`emerging-surfaces` §2B). The v0.4.5 age×saturation rule
+  mis-predicted the wins (a fresh, no-CVE bug on a *saturated marquee* program paid $7k). Mining wins
+  vs. duped incomplete-fixes found the load-bearing axis is variant *character*: Tier 1 (patch-diff-obvious)
+  and Tier 2 (unpatched surface — high-dup even when Critical/PoC'd) dupe; Tier 3 (cross-layer / no-advisory
+  desync) can pay even on a swarmed program. Corrected two claims: an in-repo oracle defeats an *Informative*
+  close but not *dup* risk (`hypothesis-generation`), and severity/PoC quality were *counter-correlated*
+  with paying. The "collision rate > program saturation" nuance (`methodology` §1) answers the swarmed
+  landscape: when you cannot out-select saturation, out-create it with a Tier-3 finding.
+
 ## v0.4.4 — commitment binding and second-wave review items
 
 Second wave from the same adversarial review. v0.4.3 took its two flagship points; this pass takes

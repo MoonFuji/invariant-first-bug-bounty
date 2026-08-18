@@ -31,7 +31,9 @@ each mint a row and the one-human-one-vote invariant collapses). Two properties 
 obvious findings on the *same saturated program* duped: (1) it takes holding two layers' differing
 representations in view at once — a scanner and a cautious reviewer both miss it; (2) the **same repo
 already ships the correct pattern elsewhere** (a sibling path that stores the canonical form), which
-*proves* "oversight, not by-design" instead of arguing it and collapses contestability. Hunt these:
+*proves* "oversight, not by-design" instead of arguing it — this defeats an *Informative/by-design*
+close, though (per the duplicate data) an in-repo oracle does **not** by itself lower *duplicate*
+risk; its power is that the desync is a bespoke, low-collision vein a diff-reader never reaches. Hunt these:
 a representation / normalization / uniqueness value that is canonical in one place and raw in
 another, especially where an in-repo sibling does it right. The mirror-image losing profile is a
 **named-class hardening or missing-sibling finding you are already hedging to Low/conditional** —
