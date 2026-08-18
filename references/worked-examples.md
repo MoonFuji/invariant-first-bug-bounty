@@ -3,6 +3,8 @@
 ## Contents
 - Example 1 — the subtle KILL: owned boundary vs. integrator misuse (`KILL @ refutation`)
 - Example 2 — a clean REPORTABLE: cross-tenant read (`REPORTABLE @ reportability`)
+- Example 3 — HOLD: proof stuck at primitive fidelity (`HOLD @ proof`)
+- Example 4 — ROUTE_ELSEWHERE: the fix belongs upstream (`ROUTE_ELSEWHERE @ route`)
 
 Two candidates walked to a terminal verdict, showing the decisive `candidate.json` fields
 (not the whole file — see `assets/candidate.template.json` for the full shape). Copy the
@@ -119,3 +121,83 @@ The refutation is `non_terminal` with a `target_owned` resolution and its own ev
 capability changed; proof exercises the exact shipped path with a negative control;
 `cold_verify` is `CONFIRMED`; novelty is `distinct`. `--stage report` exits 0 and the report may
 be drafted.
+
+## Example 3 — HOLD: proof stuck at primitive fidelity
+
+**Situation.** SSRF candidate in `acme-gateway`. The trace is complete, the capability delta is
+real, and the strongest refutation is resolved — but the only PoC runs against a substitute HTTP
+client that copies the vulnerable lines, not the exact shipped executable through its real request
+path. Rent is due and a novelty window is closing.
+
+**Why it holds, not reports.** Everything through the `refutation` gate is evidenced, so this is
+not a `KILL`. But `proof` needs the exact shipped path (Workflow step 8): a substitute client is
+primitive fidelity only. Pressure is not evidence (Red flags — STOP). The honest verdict is
+`HOLD` with the one missing artifact named — a success, and a to-do, not a report.
+
+```jsonc
+"proof": {
+  "type": "none",
+  "artifact": "poc_substitute_client.py",
+  "command": "python poc_substitute_client.py",
+  "observed_result": "substitute client follows the attacker URL — primitive fidelity only",
+  "negative_controls": [],
+  "production_relevance": "not yet established through the shipped path"
+},
+"decision": {
+  "verdict": "HOLD",
+  "gate": "proof",
+  "failed_gates": [],
+  "missing_evidence": [
+    "invoke the exact pinned acme-gateway binary through its real request handler; capture the listener hit, version/command artifacts, exit status, and a negative control that a blocked URL fails"
+  ],
+  "reason": "trace and refutation complete; proof is primitive-only, exact shipped path not yet exercised",
+  "decided_at": "2026-08-18"
+}
+```
+
+`HOLD` requires an empty `failed_gates` and a non-empty `missing_evidence`; the validator checks
+the evidence accumulated through the gate *before* `proof`. Build the real path next; the finding
+either upgrades to `REPORTABLE` or dies at `KILL @ reachability` when a guard neutralizes it.
+
+## Example 4 — ROUTE_ELSEWHERE: the fix belongs upstream
+
+**Situation.** A path-traversal bug reproduces in `acme-app`, but the flaw lives entirely in an
+open-source archive-extraction library `acme-app` bundles unmodified. `acme-app` neither wrote nor
+can fix the defective code; the upstream library owns the boundary and would ship the fix.
+
+**Why it routes.** The bug is real and reproduced, so it is not a `KILL @ reachability`. But
+`acme-app`'s program does not own the faulty code (Workflow step 9). The strongest refutation is a
+confirmed `target_does_not_own_security_property`; a confirmed terminal refutation of that kind
+lands at `ownership|route`. Here another project owns and can fix it, so route it upstream (advisory
+/ its own program), not to `acme-app`.
+
+```jsonc
+"threat_model": {
+  "strongest_refutation": {
+    "claim": "the traversal is implemented in the bundled upstream library, which owns and enforces this boundary",
+    "kind": "target_does_not_own_security_property",
+    "evidence": "the vulnerable extract() ships verbatim from upstream vX.Y; acme-app calls it unmodified",
+    "resolution": "",
+    "resolution_source": "none",
+    "result": "confirmed"
+  }
+},
+"route": {
+  "owning_project": "upstream-org/archive-lib",
+  "owner_evidence": "the defective extract() is defined and shipped by upstream-org/archive-lib vX.Y",
+  "submission_target": "upstream advisory to upstream-org/archive-lib (or its bounty program)",
+  "type": "upstream-advisory",
+  "owner_verified": true
+},
+"decision": {
+  "verdict": "ROUTE_ELSEWHERE",
+  "gate": "route",
+  "failed_gates": [],
+  "missing_evidence": [],
+  "reason": "real traversal, but the faulty code is owned and fixed by the upstream library, not acme-app",
+  "decided_at": "2026-08-18"
+}
+```
+
+Filing this against `acme-app`'s program because it has a payout is venue-shopping; the fix — and
+the valid disclosure — belongs where the code lives.

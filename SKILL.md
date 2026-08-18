@@ -78,7 +78,7 @@ python scripts/validate-candidate.py --stage report <hunt-dir>/candidate.json
 
 ## Workflow
 
-1. **Verify target, mode, and route.** Record the operating mode, exact program, asset, repository, commit/release, scope evidence, bounty eligibility, and when scope was checked. Identify the project that owns the vulnerable code and would ship the fix. Build a small **intent corpus**: read `SECURITY.md`, `THREAT_MODEL`, ADRs, `CONTRIBUTING`, README security notes, and inline `# nosec` / `# SECURITY:` pragmas, and quote (never paraphrase) two lists into `candidate.json.intent_corpus` — `intentional_behaviors` (what the project explicitly calls by-design / not-a-vuln / out-of-scope / accepted-risk) and `acknowledged_risks` (classes it explicitly treats as in-scope). A finding matching an intentional_behavior is `KILL @ refutation` (`behavior_is_documented_contract`); one matching an acknowledged_risk is strengthened. Do not infer from absence.
+1. **Verify target, mode, and route.** Record the operating mode, exact program, asset, repository, commit/release, scope evidence, bounty eligibility, and when scope was checked. A listed or public repository is not proof the exact asset is bounty-eligible or that source-only proof is accepted — verify eligibility and the PoC policy live before investing, since some programs auto-N/A source-only analysis (`references/platform-operations.md` §0). Identify the project that owns the vulnerable code and would ship the fix. Build a small **intent corpus**: read `SECURITY.md`, `THREAT_MODEL`, ADRs, `CONTRIBUTING`, README security notes, and inline `# nosec` / `# SECURITY:` pragmas, and quote (never paraphrase) two lists into `candidate.json.intent_corpus` — `intentional_behaviors` (what the project explicitly calls by-design / not-a-vuln / out-of-scope / accepted-risk) and `acknowledged_risks` (classes it explicitly treats as in-scope). A finding matching an intentional_behavior is `KILL @ refutation` (`behavior_is_documented_contract`); one matching an acknowledged_risk is strengthened. Do not infer from absence.
 2. **Build the security model.** Record principals, protected assets, trust boundaries, state stores, enforcement points, and one invariant. Read selectively until these are concrete; grep output is not a model.
 3. **Generate hypotheses before committing the invariant (bounded).** On a large or unfamiliar target where the highest-value invariant is not obvious, run one ideation pass (`references/hypothesis-generation.md`): cycle the attack modes, run a pre-mortem specific to this system, and ask of every defensive construct "what did the author fear?" Each hypothesis carries a **creativity signal** — one line on why a scanner would miss it; discard any that lacks one. This yields a ranked queue in `candidate.json.hypothesis_queue`, not candidates. Promote exactly one to the invariant and continue; keep the rest as the reinvestment queue. Skip this step when the invariant is already obvious from step 2.
 4. **Test relevance, then trace.** State a provisional security boundary and plausible new capability. If no meaningful capability change is possible, stop early. Otherwise follow untrusted input through validation/canonicalization, authorization, mutation/read, persistence or external effect, and at least one safe or parallel sibling. When source code is used by a managed product, separately trace the product-facing input through control-plane validation, storage, serialization, and runtime configuration; product documentation proves that a field exists, not that an attacker-controlled representation reaches the cited code unchanged. Re-trace source provenance for every sibling effect; similar sinks do not inherit attacker control from the original path.
@@ -89,6 +89,22 @@ python scripts/validate-candidate.py --stage report <hunt-dir>/candidate.json
 9. **Route before reporting.** Verify that the destination owns the faulty code and accepts this proof class. A real bug in a dependency may require an upstream advisory rather than the product's bounty program.
 10. **Measure contestability.** Fingerprint the root cause as `boundary|primitive|invariant|effect`; record a query and outcome for your own reports, program disclosures, upstream history, and recent advisories. Select one globally closest known match and compare all four fingerprint axes.
 11. **Decide and persist.** Set exactly one terminal verdict and `decision.gate` in `candidate.json`, name failed gates or missing evidence, then run `--stage decision`.
+
+Copy this checklist into your working notes and check off each gate only when an artifact in `candidate.json` backs it — never tick a box you cannot defend:
+
+```
+- [ ] 1.  Target, mode, route, intent corpus recorded ............ scope
+- [ ] 2.  Security model + one declared invariant ............... model
+- [ ] 3.  Hypotheses generated, one promoted (creativity signal). (ideation)
+- [ ] 4.  Relevance tested; source-to-effect trace complete ..... relevance/reachability
+- [ ] 5.  Capability delta stated: before ≠ after ............... capability_delta
+- [ ] 6.  Strongest refutation attempted and resolved ........... refutation
+- [ ] 7.  Adversarial self-review: advocate + cold-verify + causal (refutation)
+- [ ] 8.  Exact shipped-path proof + negative control captured .. proof
+- [ ] 9.  Route ownership verified .............................. route/ownership
+- [ ] 10. Root-cause fingerprint + novelty search → distinct .... novelty
+- [ ] 11. One terminal verdict + gate persisted; validator run .. reportability
+```
 
 ## Depth contract
 
