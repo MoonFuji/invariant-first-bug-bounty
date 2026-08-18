@@ -45,7 +45,11 @@ finding; each maps onto an existing gate or terminal refutation kind.
 
 Record which layers were searched, the strongest defense you could build, and any FP-pattern
 hits, in `adversarial_review.advocate`. An unrebutted FP-pattern hit forbids `REPORTABLE` — write
-the rebuttal (with evidence) or take the implied `KILL`.
+the rebuttal (with evidence) or take the implied `KILL`. These are the eight patterns assessed
+against the **single candidate under review**, so `fp_pattern_hits` holds at most a handful of
+entries — one per pattern that actually matches, never one per grep line. If a recon sweep
+returned dozens of syntactic hits, that is a discovery list, not a finding: they belong in the
+variant sweep, not here, and are rebutted by structural class, not line by line.
 
 ## Role 2 — Cold verifier (zero-context re-derivation)
 
@@ -93,6 +97,24 @@ Score each surviving protection **Fragile / Moderate / Robust**. A finding block
 Fragile protection is worth re-investigating from a different entrypoint rather than killing.
 
 Record `adversarial_review.causal[]` with one entry per protection.
+
+## Symmetry: doubt must be evidenced too
+
+This review exists to kill false positives, but it must not become a false-*negative* engine. A
+risk-averse pass will reach for an imagined mitigation — "there is probably a WAF", "some
+middleware likely re-checks this", "production surely disables the debug route" — and downgrade a
+real finding to `UNCERTAIN` on speculation. That is the mirror image of the inflation the main
+workflow already forbids (SKILL step 6 rejects unevidenced *preconditions* that help the
+attacker), and it is equally banned here: an unevidenced *mitigation* that kills the finding is
+just as invalid.
+
+Rule: **every downgrade, `UNCERTAIN`, or `DISPROVED` must cite code-grounded evidence for the
+doubt** — a specific file:line control, a documented deployment default, a real config — not an
+invented or theoretical protection. If the only reason a finding is not `CONFIRMED` is a mitigation
+you cannot point to in the codebase, config, or program policy, that is not doubt; the honest
+verdict is `CONFIRMED` and the speculation belongs in `## Limitations`, not in the verdict. A real
+upstream protection (WAF/proxy) does not settle it either way until the confounder check finds it
+in evidence *and* fails to find a path that skips it.
 
 ## Output contract
 

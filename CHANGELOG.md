@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.4.1 — self-review guardrails
+
+Documentation-only refinements to the v0.4.0 self-review and ideation steps; no
+validator or schema change (the suite is unchanged at 27/27).
+
+- `references/adversarial-self-review.md`: **symmetry rule** — the self-review must
+  not become a false-negative engine. Every downgrade / `UNCERTAIN` / `DISPROVED`
+  must cite code-grounded evidence for the doubt; an invented or theoretical
+  mitigation (a hidden WAF, unlisted middleware, assumed production hardening) may
+  not defeat a real finding, mirroring the workflow's existing ban on unevidenced
+  attacker preconditions. Also clarifies that `fp_pattern_hits` are the eight
+  patterns against the single candidate (at most a handful), never one per grep
+  line — a large recon hit list is a discovery list for the variant sweep.
+- `references/hypothesis-generation.md`: dropping an unsupported hypothesis is the
+  queue working, not a failed target — pivot to the next; a hypothesis is not a
+  candidate, so nothing gates on it.
+- `SKILL.md`: variant sweep prioritizes the highest-likelihood siblings and records
+  leads rather than exhaustively tracing every one, stopping when the abstraction
+  ladder's false-positive rate climbs.
+
+Deliberately not adopted: a filesystem/mtime artifact check on `cold_verify` (still
+gameable, and an mtime window would break the skill's cross-session persistence and
+determinism), and a hard numeric cap on variant siblings (conflicts with the
+systemic-finding value; the abstraction ladder already governs when to stop).
+
 ## v0.4.0 — discovery front-end and adversarial self-review
 
 Grafts a hypothesis-generation and structured self-challenge front-end onto the
