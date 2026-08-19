@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.4.7 — agentic-execution refinements (metadata honesty, lazy intent corpus)
+
+Answers a review on agentic-execution physics (state / context / metadata). Two of its four points
+were sound and are implemented as prose; two were declined after code-checking their premises. No
+validator or schema change; suite unchanged at 58/58.
+
+- **Don't guess market volume (the metadata trap).** `target.saturation.discloses_reports` is a
+  *structural, verifiable* fact (does the program publish a disclosed-reports feed?) — read from the
+  live page or HackerOne MCP. `reports_last_90d` and `hot_cluster` are market dynamics training data
+  cannot know — fill them from HackerOne MCP (`GetProgramDisclosedReports`/stats) or leave null,
+  never guess. The validator already never required `reports_last_90d`; this closes the prose that
+  invited estimating it. (`SKILL.md` step 1, `methodology` §1.)
+- **Lazy-load the intent corpus (context starvation).** Read only the cheap, high-signal top-level
+  security docs upfront (`SECURITY.md`, README security notes, a `THREAT_MODEL` summary); defer
+  voluminous ADRs and the full pragma sweep to the doc relevant to the *promoted hypothesis*
+  (step 3), rather than reading everything before any code is read — which starves the context on a
+  large target. (`SKILL.md` step 1.)
+
+Declined after checking against the code (recorded so they are not re-litigated):
+
+- **Mechanize the incomplete-fix tiers via file-path distance.** The validator has *no tier gate* to
+  game (the tiers are `emerging-surfaces` §2B prose), and the fix is unsound: a Tier-3 finding has
+  *no public patch* to measure path-distance from, and path-distance is a weak proxy for a cross-layer
+  semantic desync. Kept the prose tiers; `collision_differentiator` remains articulation, not a hard
+  gate (acknowledged in v0.4.6).
+- **Shard the state file into markdown scratchpads.** The template is 199 lines, not 500, and markdown
+  cannot be schema-validated — full sharding would *remove* the exhaustion / intent / subclaim gates
+  built in v0.4.3–v0.4.6. Kept the single validated `candidate.json`; targeted-edit tools handle
+  mutation. Revisit if real state corruption is observed.
+
 ## v0.4.6 — behavioral brakes on the two live loss modes
 
 Answers a research-tight review of v0.4.5 whose central point was correct and code-verified: R1 made
