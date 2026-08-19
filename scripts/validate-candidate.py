@@ -970,14 +970,16 @@ def validate_schema5_report_gates(document, errors):
     if not isinstance(hardening, dict) or hardening.get("status") != "done":
         errors.append(
             "REPORTABLE requires a completed hardening pass (hardening.status 'done'): widen the blast "
-            "radius, escalate severity, and deepen the PoC before submitting"
+            "radius, reassess severity on the evidence, and deepen the PoC before submitting"
         )
     else:
         for field in ("widened_radius", "escalated_severity", "deepened_poc"):
             value = hardening.get(field)
             if not isinstance(value, str) or not value.strip():
                 errors.append(
-                    f"hardening.{field} must record what the pass attempted (or an explicit 'n/a: <reason>')"
+                    f"hardening.{field} must record what the pass attempted (or an explicit 'n/a: <reason>'); "
+                    "escalated_severity records a severity re-assessment -- raise it only on evidence, "
+                    "and hold or lower it when the evidence does not support a higher score"
                 )
 
 
@@ -1031,12 +1033,21 @@ def collect_warnings(document):
 
     verdict = value_at(document, "decision.verdict")
     # A 'clean' verdict from static reading alone is the low-trust pattern (measured: ~half of clean
-    # verdicts had no executed probe). Static reading is not probing.
-    if verdict == "NO_REPORTABLE_FINDING" and value_at(document, "proof.type") in (None, "none"):
-        warnings.append(
-            "NO_REPORTABLE_FINDING with no executed probe (proof.type none) rests on static reading; "
-            "run something that would have fired if the bug existed before trusting 'clean'"
+    # verdicts had no executed probe). Static reading is not probing. Key this on a recorded probe
+    # under exhaustion.probes -- not proof.type, which a clean verdict never validates and can inherit
+    # populated from a dropped report draft (making a static read look dynamically tested).
+    if verdict == "NO_REPORTABLE_FINDING":
+        probes = value_at(document, "exhaustion.probes")
+        has_probe = isinstance(probes, list) and any(
+            isinstance(p, dict) and isinstance(p.get("command"), str) and p["command"].strip()
+            for p in probes
         )
+        if not has_probe:
+            warnings.append(
+                "NO_REPORTABLE_FINDING with no executed probe (exhaustion.probes empty) rests on static "
+                "reading; record a probe that would have fired if the bug existed -- its command and the "
+                "observed result -- before trusting 'clean'"
+            )
     # A hardening pass by the same author catches less than a fresh-context agent.
     if verdict == "REPORTABLE" and value_at(document, "hardening.reviewer") in (None, "", "self"):
         warnings.append(
@@ -1188,6 +1199,17 @@ def validate_decision(document, errors):
                     "the depth (adversarial_review.reviewer = its id), or set reviewer 'owed' and signal "
                     "the user (provisional) -- a self-graded 'clean' is the verdict that is not trusted"
                 )
+            # Coherence: a clean verdict cannot carry an adversarial review that CONFIRMED the
+            # finding. A CONFIRMED cold_verify says the vulnerability holds -- the opposite of
+            # NO_REPORTABLE_FINDING. This catches a stale REPORTABLE-era review left on the
+            # candidate when the decision was flipped to clean (the review must audit the clean
+            # conclusion, not a finding that no longer stands).
+            if value_at(document, "adversarial_review.cold_verify.verdict") == "CONFIRMED":
+                errors.append(
+                    "NO_REPORTABLE_FINDING contradicts adversarial_review.cold_verify.verdict CONFIRMED: "
+                    "a confirmed finding is not a clean verdict -- the review must audit the clean "
+                    "conclusion (DISPROVED/UNCERTAIN), not carry a stale CONFIRMED from a dropped report"
+                )
     elif verdict == "REPORTABLE":
         require_capability_delta(document, errors)
         view = refutation_view(document)
@@ -1307,7 +1329,16 @@ def main():
         "decision": "DECISION READY",
         "report": "REPORT READY",
     }
-    print(f"{labels[args.stage]}: {args.candidate}")
+    label = labels[args.stage]
+    # An owed independent review is not a final verdict: the candidate is structurally valid but
+    # not yet certified. Print a distinct provisional label so exit 0 does not read as "submit" --
+    # the report/decision is provisional until an independent agent (or the user) verifies it.
+    if value_at(document, "adversarial_review.reviewer") == "owed":
+        label = {
+            "report": "REPORT PROVISIONAL -- INDEPENDENT REVIEW OWED",
+            "decision": "DECISION PROVISIONAL -- INDEPENDENT REVIEW OWED",
+        }.get(args.stage, label)
+    print(f"{label}: {args.candidate}")
     return 0
 
 

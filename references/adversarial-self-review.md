@@ -16,17 +16,26 @@ not any tooling.
 
 **The review must be independent — self-review does not certify a final verdict.** A single
 context cannot shed its own anchoring, and measured on real hunts even a genuine self red-team
-over-rated its own reachability. So the *primary* mode is: **spawn a fresh-context agent** — a
-separate agent, session, or model handed only the repository and the candidate artifact, with none
-of your prosecution narrative — let it run the three roles below, and record *its* identifier in
-`adversarial_review.reviewer`. If your harness cannot spawn one, set `reviewer: "owed"`, **signal
-the user that an independent review is owed**, and treat the verdict as provisional. The validator
-rejects `reviewer: "self"` on `REPORTABLE` and `NO_REPORTABLE_FINDING`: you may run the rotation
-yourself first to strengthen the candidate, but that is preparation, never the certification.
+over-rated its own reachability. This splits into two distinct passes:
 
-Run this pass after the strongest-refutation attempt and before proof. It can only lower
-confidence or set `KILL`; it never clears the `refutation` or `novelty` gates. Record the result
-in `candidate.json.adversarial_review`.
+- **Preparation (run it yourself, before proof).** Run the three roles below against your own
+  finding to decide what proof would convince a skeptic and to fill the `advocate`/`cold_verify`/
+  `causal` blocks. This strengthens the candidate; it does **not** certify it. Do not set
+  `adversarial_review.reviewer` to a self identifier — a self-graded rotation is preparation only.
+- **Certification (independent, on the finished candidate).** After proof *and* the hardening
+  pass, **spawn a fresh-context agent** — a separate agent, session, or model handed only the
+  repository and the *finished* candidate artifact, with none of your prosecution narrative — let
+  it run the three roles, and record *its* identifier in `adversarial_review.reviewer`. Certify
+  last, on what will actually be submitted: a reviewer that ran before the proof and hardening
+  never saw the final claim (which the hardening pass may have widened or re-scored). If your
+  harness cannot spawn one, set `reviewer: "owed"`, **signal the user that an independent review is
+  owed**, and treat the verdict as provisional (the validator prints `PROVISIONAL`, not `READY`).
+
+The validator rejects `reviewer: "self"` on `REPORTABLE` and `NO_REPORTABLE_FINDING`. The pass can
+only lower confidence or set `KILL`; it never clears the `refutation` or `novelty` gates. On a
+`NO_REPORTABLE_FINDING` the review audits the *clean conclusion*: its `cold_verify.verdict` is
+`DISPROVED` or `UNCERTAIN`, never `CONFIRMED` (a confirmed finding is not a clean verdict). Record
+the result in `candidate.json.adversarial_review`.
 
 ## Role 1 — Advocate (build the strongest defense)
 
