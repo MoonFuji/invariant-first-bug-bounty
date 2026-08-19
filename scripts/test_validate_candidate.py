@@ -265,7 +265,11 @@ def baseline_v5():
 
 
 def baseline_nrf():
-    """A schema-5 NO_REPORTABLE_FINDING candidate with a full exhaustion record: golden ACCEPT."""
+    """A schema-5 NO_REPORTABLE_FINDING candidate with a full exhaustion record: golden ACCEPT.
+
+    A clean verdict is coherent only if its own adversarial review did not CONFIRM a finding
+    (the finding did not hold), and if it ran a probe that would have fired had the bug existed.
+    """
     doc = baseline_v5()
     doc["threat_model"]["capability_before"] = "cannot read other tenants"
     doc["threat_model"]["capability_after"] = "cannot read other tenants"
@@ -277,6 +281,28 @@ def baseline_nrf():
         "resolution_source": "none",
         "result": "confirmed",
     }
+    # The review audits the clean conclusion; it did not confirm a vulnerability.
+    doc["adversarial_review"]["cold_verify"] = {
+        "verdict": "DISPROVED",
+        "rederived_severity": "n/a: tenant scope holds",
+        "killed_subclaim": "cross-tenant read: the query is org-scoped, so the row is never returned",
+        "subclaims": [
+            {"claim": "attacker controls the report id", "status": "supported",
+             "evidence": "routes.rb:14 GET /reports/:id -> params[:id]"},
+            {"claim": "id reaches the query with no tenant filter", "status": "unsupported",
+             "evidence": "report_controller.rb:12 Report.where(org_id: current_user.org_id).find(params[:id])"},
+        ],
+    }
+    # The proof block reflects the negative probe, not an inherited "boundary crossed".
+    doc["proof"] = {
+        "type": "regression-test",
+        "artifact": "probe.sh",
+        "command": "./probe.sh tenant-A-token /api/reports/<tenant-B-id>",
+        "observed_result": "404 not found under the tenant filter",
+        "negative_controls": ["same-tenant id returns 200"],
+        "production_relevance": "the shipped controller path",
+        "config_dependency": "none",
+    }
     doc["exhaustion"] = {
         "tried": [
             "traced GET /reports/:id end to end",
@@ -284,6 +310,15 @@ def baseline_nrf():
             "grepped the flow shape repo-wide",
         ],
         "untried_closed": [],
+        "probes": [
+            {
+                "hypothesis": "cross-tenant id bypass on the report show path",
+                "command": "./probe.sh tenant-A-token /api/reports/<tenant-B-id>",
+                "would_fire_if_vulnerable": "returns the tenant-B report row",
+                "observed": "404 under the tenant filter",
+                "result": "negative",
+            }
+        ],
         "depth_contract": {
             "entrypoint": "GET /api/reports/:id",
             "invariant_enforcement": "ReportController#show tenant scope",
@@ -865,6 +900,14 @@ def case_AE_accept():
     return doc, "decision", 0
 
 
+def case_AF_reject():
+    # NO_REPORTABLE_FINDING carrying a CONFIRMED cold_verify (stale report-era review) -> reject:
+    # a confirmed finding contradicts a clean verdict.
+    doc = baseline_nrf()
+    doc["adversarial_review"]["cold_verify"]["verdict"] = "CONFIRMED"
+    return doc, "decision", 2
+
+
 CASES = [
     ("2  resolution attacks same boundary -> ACCEPT", case_2_accept, None),
     ("K  schema-5 process gates satisfied -> ACCEPT", case_K_accept, None),
@@ -903,6 +946,7 @@ CASES = [
     ("AC REPORTABLE, no hardening pass -> REJECT", case_AC_reject, "hardening pass"),
     ("AD NO_REPORTABLE_FINDING self-certified -> REJECT", case_AD_reject, "may not be self-certified"),
     ("AE NO_REPORTABLE_FINDING review owed -> ACCEPT (provisional)", case_AE_accept, None),
+    ("AF NO_REPORTABLE_FINDING + CONFIRMED cold_verify -> REJECT", case_AF_reject, "contradicts adversarial_review"),
     ("5  commits+issues+PRs evidenced -> ACCEPT", case_5_accept, None),
     ("5b upstream channels explicit -> ACCEPT", case_5b_accept, None),
     ("7b by-design -> KILL@refutation -> ACCEPT", case_7b_accept, None),

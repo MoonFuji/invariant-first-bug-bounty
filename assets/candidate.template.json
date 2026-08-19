@@ -29,6 +29,7 @@
   "exhaustion": {
     "tried": [],
     "untried_closed": [],
+    "probes": [],
     "depth_contract": {
       "entrypoint": "",
       "invariant_enforcement": "",
@@ -62,7 +63,7 @@
     "saturation": {
       "reports_last_90d": null,
       "discloses_reports": null,
-      "hot_cluster": false
+      "hot_cluster": null
     }
   },
   "model": {

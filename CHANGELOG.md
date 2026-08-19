@@ -1,5 +1,62 @@
 # Changelog
 
+## v0.5.1 — correctness holes in the independence spine
+
+A research-tight re-review of v0.5.0 found that the new independence machinery, while directionally
+right, had holes the validator did not catch — two of them demonstrated by the skill's own golden
+fixtures. These are the fixes; verified against the code before implementing, and the unsound
+proposals rejected with reasons.
+
+- **A clean verdict can no longer carry a confirmed finding.** `baseline_nrf` (the golden
+  `NO_REPORTABLE_FINDING` accept) was built from the `REPORTABLE` fixture and inherited its
+  `cold_verify.verdict: "CONFIRMED"`, its cross-tenant-read subclaims, *and* a proof of "boundary
+  crossed" — while declaring the target clean. The NRF branch never inspected `cold_verify`, so a
+  clean verdict could carry an independent reviewer that said the bug was real. Now a schema-5
+  `NO_REPORTABLE_FINDING` with `cold_verify.verdict == "CONFIRMED"` is **rejected** (the review must
+  audit the clean conclusion — `DISPROVED`/`UNCERTAIN`), and the fixture is rewritten coherently.
+  (new case AF.)
+- **`owed` prints `PROVISIONAL`, not `READY`.** An owed independent review exited 0 with the normal
+  `REPORT READY` label, so the skill's "nonzero forbids drafting" rule read the provisional state as
+  submit-ready. The validator now prints `REPORT PROVISIONAL -- INDEPENDENT REVIEW OWED` (and the
+  decision-stage equivalent); still exit 0 so a harness that cannot spawn an agent is not deadlocked,
+  but the label no longer says "ready".
+- **The static-clean warning moved off `proof.type`.** It keyed on `proof.type`, which a clean
+  verdict never validates and can inherit populated from a dropped report draft — so it never fired
+  on the golden clean fixture. It now keys on a recorded `exhaustion.probes[]` entry (command +
+  observed result). New optional `exhaustion.probes` block; the golden clean fixture carries a real
+  negative probe. Still warn-only, per the earlier warn-only choice.
+- **Certify last, on the finished candidate.** The independent review was placed *before* proof and
+  hardening (reference + step 7), so it never saw the final claim the hardening pass may have widened
+  or re-scored — a TOCTOU on the artifact under review. The self-run rotation is now explicitly
+  *preparation* (step 7, shapes the proof, never sets `reviewer`), and the independent
+  *certification* runs on the finished candidate after proof and hardening (step 11). Doc-level: a
+  static per-candidate validator cannot verify order-of-operations, so this is enforced by the
+  workflow, not the JSON.
+- **`hot_cluster` defaults to `null`, not `false`.** The template shipped `false`, contradicting the
+  skill's "never guess these — leave null" rule and silently disabling the collision brake (which
+  only fires on `hot_cluster: true`, high risk, or a non-disclosing program). Now `null`.
+- **"stop early" is gone.** Step 4 still literally said "If no meaningful capability change is
+  possible, stop early" — the exact phrase tied to the give-up-too-soon complaint, and a direct
+  contradiction of the KEEP-GOING rule ("trace first, then judge"). Rewritten to trace-then-close-
+  the-hypothesis, never the target.
+- **Severity reassessment, not escalation.** The hardening leg said "escalate severity", a
+  directional nudge against the skill's own anti-inflation stance. Reworded (SKILL + validator
+  message) to reassess on evidence — raise only when supported, hold or lower otherwise. Field name
+  `escalated_severity` kept (a rename would ripple for marginal gain).
+- **`config_dependency` clarified, not split.** A vendor-shipped default that real deployments run
+  *unchanged* is the base case `none`, not `default_only` (which means a dev/template default a real
+  deployment replaces). One clarifying clause — the reviewer's proposed enum split was rejected
+  (it risks re-admitting the operator-config informatives the gate exists to stop; the good case is
+  already expressible as `none`).
+
+**Rejected, with reasons:** binding the review to a self-computed candidate digest (the agent writes
+its own hash — presence-not-truth, unverifiable, heavy); a mechanical campaign-stop / queue-lifecycle
+gate (a per-candidate validator structurally cannot see the campaign; warn-only was the deliberate
+choice); and a portable proof of reviewer independence (impossible without harness cooperation —
+already caveated honestly).
+
+Suite 57 → 58 (case AF added). Still owed: the empirical re-mine after more hunts.
+
 ## v0.5.0 — trustworthy depth: independence over self-certification
 
 A direction change, driven by two things the earlier analysis missed. First, the user pointed out
