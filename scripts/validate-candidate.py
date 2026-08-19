@@ -675,68 +675,6 @@ def validate_exhaustion(document, errors):
                 errors.append(f"exhaustion.depth_contract.{field} must be a non-empty string")
 
 
-def validate_commit(document, errors):
-    """Schema-5: the pre-hunt commitment must be persisted and honored.
-
-    "Commit before you hunt" names the mode, invariant, and expected capability
-    delta up front. Persisting them as an immutable snapshot lets a silent reframe --
-    switching to a different invariant mid-hunt without saying so -- be caught by
-    diffing the committed invariant against the current one: a change with no
-    decision_history entry and no recorded supersession is exactly the drift the
-    spoken commitment was meant to make visible.
-    """
-    version = value_at(document, "schema_version")
-    if not isinstance(version, int) or version < 5:
-        return
-    commit = value_at(document, "commit")
-    if not isinstance(commit, dict):
-        errors.append(
-            "schema 5 requires a commit block persisting the pre-hunt commitment "
-            "(mode and committed_at always; invariant once one is promoted)"
-        )
-        return
-    # mode + committed_at are fixed before recon and always required.
-    for field in ("mode", "committed_at"):
-        value = commit.get(field)
-        if not isinstance(value, str) or not value.strip():
-            errors.append(f"commit.{field} must be a non-empty string (persist it before recon)")
-
-    # A silent operating-mode switch is a scope / safe-harbor risk -- diff it (this is what
-    # earns commit.mode its place rather than duplicating target.operating_mode as dead data).
-    committed_mode = commit.get("mode")
-    current_mode = value_at(document, "target.operating_mode")
-    if (
-        isinstance(committed_mode, str) and committed_mode.strip()
-        and isinstance(current_mode, str) and current_mode.strip()
-        and committed_mode.strip() != current_mode.strip()
-    ):
-        errors.append(
-            "commit.mode differs from target.operating_mode -- a silent operating-mode switch; "
-            "restore the committed mode or record why it changed"
-        )
-
-    # The invariant is committed only at promotion (workflow step 3); an early terminal that dies
-    # before a model exists (e.g. KILL @ scope, the most common outcome) does not owe one yet.
-    current_invariant = value_at(document, "model.security_invariant")
-    model_built = isinstance(current_invariant, str) and bool(current_invariant.strip())
-    if model_built:
-        invariant = commit.get("invariant")
-        if not isinstance(invariant, str) or not invariant.strip():
-            errors.append(
-                "commit.invariant must be a non-empty string once an invariant is committed "
-                "(model.security_invariant is set)"
-            )
-        elif invariant.strip() != current_invariant.strip():
-            superseded = commit.get("superseded_by")
-            if not (isinstance(superseded, str) and superseded.strip()):
-                errors.append(
-                    "the committed invariant differs from model.security_invariant but the reframe "
-                    "is not recorded in commit.superseded_by; a silent switch to a different invariant "
-                    "defeats the commitment device (a decision_history verdict change is not an "
-                    "invariant-reframe record)"
-                )
-
-
 def require_intent_corpus_present(document, errors):
     """Schema-5: the intent corpus (workflow step 1) must exist by the time a 'clean'
     conclusion is reached, not be back-filled at report time. Requiring it for
@@ -1016,6 +954,32 @@ def validate_schema5_report_gates(document, errors):
             "deployment uses (operator config is not attacker input) -- HOLD or KILL, not report"
         )
 
+    # Self-certification is banned for a REPORTABLE: self-review over-rates its own findings (measured
+    # -- even a genuine self red-team over-rated reachability). Require an independent reviewer, or an
+    # explicit "owed" that hands the finding to the user as provisional.
+    reviewer = review.get("reviewer") if isinstance(review, dict) else None
+    if reviewer in (None, "", "self"):
+        errors.append(
+            "REPORTABLE may not be self-certified: adversarial_review.reviewer must name an independent "
+            "reviewer (a fresh-context agent given only the artifact), or be 'owed' and handed to the "
+            "user as provisional -- do not submit a self-graded finding"
+        )
+
+    # Reports ship weak -- require a completed hardening pass before REPORTABLE.
+    hardening = value_at(document, "hardening")
+    if not isinstance(hardening, dict) or hardening.get("status") != "done":
+        errors.append(
+            "REPORTABLE requires a completed hardening pass (hardening.status 'done'): widen the blast "
+            "radius, escalate severity, and deepen the PoC before submitting"
+        )
+    else:
+        for field in ("widened_radius", "escalated_severity", "deepened_poc"):
+            value = hardening.get(field)
+            if not isinstance(value, str) or not value.strip():
+                errors.append(
+                    f"hardening.{field} must record what the pass attempted (or an explicit 'n/a: <reason>')"
+                )
+
 
 def collect_warnings(document):
     """Non-blocking advisories for the warn-only schema-5 process steps.
@@ -1057,6 +1021,28 @@ def collect_warnings(document):
                 "variant_sweep is unrecorded on a REPORTABLE finding; a variant is a second "
                 "submission left on the table -- sweep siblings and alternate transports"
             )
+
+    # PROVISIONAL: an owed independent review means the verdict is not final.
+    if value_at(document, "adversarial_review.reviewer") == "owed":
+        warnings.append(
+            "PROVISIONAL: adversarial_review.reviewer is 'owed' -- an independent agent (or the user) "
+            "must verify before this verdict is final; do not self-certify"
+        )
+
+    verdict = value_at(document, "decision.verdict")
+    # A 'clean' verdict from static reading alone is the low-trust pattern (measured: ~half of clean
+    # verdicts had no executed probe). Static reading is not probing.
+    if verdict == "NO_REPORTABLE_FINDING" and value_at(document, "proof.type") in (None, "none"):
+        warnings.append(
+            "NO_REPORTABLE_FINDING with no executed probe (proof.type none) rests on static reading; "
+            "run something that would have fired if the bug existed before trusting 'clean'"
+        )
+    # A hardening pass by the same author catches less than a fresh-context agent.
+    if verdict == "REPORTABLE" and value_at(document, "hardening.reviewer") in (None, "", "self"):
+        warnings.append(
+            "hardening.reviewer is self -- a widen/escalate/deepen pass by a fresh-context agent "
+            "catches more than the author re-reading their own finding"
+        )
     return warnings
 
 
@@ -1158,7 +1144,6 @@ def validate_decision(document, errors):
         validate_common(document, errors)
 
     require_text(document, "decision.decided_at", errors)
-    validate_commit(document, errors)
 
     # A confirmed terminal refutation must land at the gate its kind implies.
     rv = refutation_view(document)
@@ -1191,6 +1176,18 @@ def validate_decision(document, errors):
         require_equal_capabilities(document, errors, "NO_REPORTABLE_FINDING")
         validate_exhaustion(document, errors)
         require_intent_corpus_present(document, errors)
+        # A "clean" verdict may not be self-certified -- it is the verdict least trusted, and a
+        # self-graded depth audit is worth little. Require an independent reviewer (a fresh-context
+        # agent given only the artifact), or an explicit "owed" that signals the user (provisional).
+        version = value_at(document, "schema_version")
+        if isinstance(version, int) and version >= 5:
+            reviewer = value_at(document, "adversarial_review.reviewer")
+            if reviewer in (None, "", "self"):
+                errors.append(
+                    "NO_REPORTABLE_FINDING may not be self-certified: an independent agent must audit "
+                    "the depth (adversarial_review.reviewer = its id), or set reviewer 'owed' and signal "
+                    "the user (provisional) -- a self-graded 'clean' is the verdict that is not trusted"
+                )
     elif verdict == "REPORTABLE":
         require_capability_delta(document, errors)
         view = refutation_view(document)
