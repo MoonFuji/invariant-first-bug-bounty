@@ -89,7 +89,7 @@ A freshly-published fix is a map to where the dangerous code is and what the aut
 
 So a hit on the seven-vector table below is a *candidate*, not a green light — it must additionally clear the Tier-3 character gate before you invest. Two calibrations the data forces: an **in-repo correctness oracle** (the repo does it right elsewhere) defeats an *Informative / by-design* close — it proves oversight, not by-design — but does **not** lower duplicate risk (several duped variants had one), so never read it as "this won't dup." And never rank incomplete-fixes by **severity or PoC quality**: here they were *counter-correlated* with paying — the Criticals duped, a race and a Low paid.
 
-Run the fix diff and its callers through seven bypass vectors before calling the class dead; record each in `candidate.json.patch_bypass.vectors`. Any hit is a fresh candidate — trace it as its own invariant (the original CVE proves plausibility, not this target's actor/reachability/impact).
+Run the fix diff and its callers through seven bypass vectors before calling the class dead; note which vectors you checked. Any hit is a fresh candidate — trace it as its own invariant (the original CVE proves plausibility, not this target's actor/reachability/impact).
 
 | Vector | Question |
 |---|---|

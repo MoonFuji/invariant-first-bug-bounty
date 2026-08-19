@@ -20,13 +20,14 @@ Cases XA-XF cover the v0.4.3 additions: a schema-5 NO_REPORTABLE_FINDING require
 checkable exhaustion record (tried[] + the five depth_contract fields), and a CONFIRMED
 cold_verify requires a persisted sub-claim decomposition with every link supported.
 
-Cases YA-YE cover v0.4.4 (the immutable commit snapshot + silent-reframe diff; intent
-corpus owed for NO_REPORTABLE_FINDING; all-clean public novelty cannot claim low private
-risk). Cases ZA-ZM cover v0.4.5/v0.4.6: the target.saturation dedup-visibility gate
-(non-disclosing -> private_duplicate_risk >= medium), the commit-gate hardening (KILL @ scope
-needs no committed invariant; reframe needs commit.superseded_by; mode diff), the
+Cases YD-YE cover v0.4.4 (intent corpus owed for NO_REPORTABLE_FINDING; all-clean public
+novelty cannot claim low private risk). Cases ZA-ZM cover v0.4.5/v0.4.6: the target.saturation
+dedup-visibility gate (non-disclosing -> private_duplicate_risk >= medium), the
 collision_differentiator required in a high-dup context, the config_dependency demonstrated-impact
-gate, per-subclaim evidence, and the model-stage saturation assessment.
+gate, per-subclaim evidence, and the model-stage saturation assessment. Cases AA-AE cover v0.5.0:
+a REPORTABLE and a NO_REPORTABLE_FINDING may not be self-certified (adversarial_review.reviewer must
+be an independent id or 'owed', never 'self'), and a REPORTABLE requires a completed hardening pass.
+(The v0.4.4 commit block and the patch_bypass block were removed in v0.5.0.)
 
 Run: python3 scripts/test_validate_candidate.py
 Exit 0 = all cases behaved as specified.
@@ -197,12 +198,6 @@ def baseline():
 def v5_process_blocks():
     """The schema-5 ideation + self-review blocks in their REPORTABLE-passing state."""
     return {
-        "commit": {
-            "mode": "SOURCE_ONLY",
-            "invariant": "inv",
-            "committed_at": "2026-08-08",
-            "superseded_by": "",
-        },
         "hypothesis_queue": [
             {"id": "H-01", "title": "cross-mode chain", "creativity_signal": "non-obvious"}
         ],
@@ -214,6 +209,7 @@ def v5_process_blocks():
             "finding_match": "none",
         },
         "adversarial_review": {
+            "reviewer": "independent-verifier-session-7f3a",
             "advocate": {
                 "layers_checked": ["framework", "application"],
                 "fp_pattern_hits": [],
@@ -250,7 +246,13 @@ def v5_process_blocks():
             "alternate_transports_checked": ["grpc", "queue"],
             "variants_found": [],
         },
-        "patch_bypass": {"base_fix_ref": "", "vectors": {}},
+        "hardening": {
+            "status": "done",
+            "reviewer": "independent-hardener-session-9c2b",
+            "widened_radius": "checked all three tenant-scoped controllers; only reports/ affected",
+            "escalated_severity": "confirmed cross-tenant read, not just enumeration; High not Medium",
+            "deepened_poc": "poc.sh proves canary read across two owned tenants with controls",
+        },
     }
 
 
@@ -737,28 +739,6 @@ def case_XF_reject():
     return doc, "report", 2
 
 
-def case_YA_reject():
-    # schema-5 candidate with the commit snapshot removed -> reject
-    doc = baseline_v5()
-    del doc["commit"]
-    return doc, "report", 2
-
-
-def case_YB_reject():
-    # committed invariant differs from the current one, no reframe recorded -> reject
-    doc = baseline_v5()
-    doc["commit"]["invariant"] = "a different invariant I started on"
-    return doc, "report", 2
-
-
-def case_YC_accept():
-    # same drift, but the reframe is recorded via commit.superseded_by -> accept
-    doc = baseline_v5()
-    doc["commit"]["invariant"] = "a different invariant I started on"
-    doc["commit"]["superseded_by"] = "reframed after tracing to the tenant-scope boundary"
-    return doc, "report", 0
-
-
 def case_YD_reject():
     # NO_REPORTABLE_FINDING with the intent corpus removed -> reject (owed by step 1)
     doc = baseline_nrf()
@@ -806,38 +786,6 @@ def case_ZG_accept():
     return doc, "report", 0
 
 
-def case_ZD_accept():
-    # schema-5 KILL @ scope dies before an invariant is committed -> commit.invariant not required
-    doc = baseline_v5()
-    doc["model"]["security_invariant"] = ""
-    doc["commit"]["invariant"] = ""
-    doc["decision"] = {
-        "verdict": "KILL",
-        "gate": "scope",
-        "failed_gates": ["scope"],
-        "missing_evidence": [],
-        "reason": "asset not bounty-eligible",
-        "decided_at": "2026-08-18",
-    }
-    return doc, "decision", 0
-
-
-def case_ZE_reject():
-    # invariant reframed, only an unrelated decision_history entry, no superseded_by -> reject (S1)
-    doc = baseline_v5()
-    doc["commit"]["invariant"] = "a different invariant I started on"
-    doc["decision_history"] = [{"verdict": "HOLD", "gate": "proof", "note": "earlier verdict"}]
-    doc["commit"]["superseded_by"] = ""
-    return doc, "report", 2
-
-
-def case_ZF_reject():
-    # committed mode differs from the current operating mode -> silent mode switch -> reject
-    doc = baseline_v5()
-    doc["commit"]["mode"] = "PROGRAM_HOSTED"
-    return doc, "report", 2
-
-
 def case_ZH_reject():
     # high private-dup risk but no collision differentiator -> reject (label alone is not enough)
     doc = baseline_v5()
@@ -882,6 +830,41 @@ def case_ZM_accept():
     return baseline_v5(), "model", 0
 
 
+def case_AA_reject():
+    # REPORTABLE self-certified (reviewer self) -> reject (no self-certification)
+    doc = baseline_v5()
+    doc["adversarial_review"]["reviewer"] = "self"
+    return doc, "report", 2
+
+
+def case_AB_accept():
+    # REPORTABLE with an owed independent review -> accept (provisional, warns)
+    doc = baseline_v5()
+    doc["adversarial_review"]["reviewer"] = "owed"
+    return doc, "report", 0
+
+
+def case_AC_reject():
+    # REPORTABLE with no completed hardening pass -> reject
+    doc = baseline_v5()
+    doc["hardening"]["status"] = "none"
+    return doc, "report", 2
+
+
+def case_AD_reject():
+    # NO_REPORTABLE_FINDING self-certified -> reject (a clean verdict can't be self-graded)
+    doc = baseline_nrf()
+    doc["adversarial_review"]["reviewer"] = "self"
+    return doc, "decision", 2
+
+
+def case_AE_accept():
+    # NO_REPORTABLE_FINDING with an owed independent review -> accept (provisional)
+    doc = baseline_nrf()
+    doc["adversarial_review"]["reviewer"] = "owed"
+    return doc, "decision", 0
+
+
 CASES = [
     ("2  resolution attacks same boundary -> ACCEPT", case_2_accept, None),
     ("K  schema-5 process gates satisfied -> ACCEPT", case_K_accept, None),
@@ -903,24 +886,23 @@ CASES = [
     ("XD NO_REPORTABLE_FINDING, empty tried[] -> REJECT", case_XD_reject, "exhaustion.tried"),
     ("XE CONFIRMED cold_verify, no subclaims -> REJECT", case_XE_reject, "cold_verify.subclaims"),
     ("XF CONFIRMED cold_verify, unsupported subclaim -> REJECT", case_XF_reject, "not supported"),
-    ("YA schema-5 missing commit block -> REJECT", case_YA_reject, "requires a commit block"),
-    ("YB committed invariant drift, no reframe -> REJECT", case_YB_reject, "commit.superseded_by"),
-    ("YC committed invariant drift, superseded_by set -> ACCEPT", case_YC_accept, None),
     ("YD NO_REPORTABLE_FINDING, no intent corpus -> REJECT", case_YD_reject, "intent_corpus"),
     ("YE REPORTABLE all-clean novelty, low private risk -> REJECT", case_YE_reject, "cannot claim low"),
     ("ZA REPORTABLE, no saturation assessment -> REJECT", case_ZA_reject, "target.saturation"),
     ("ZB non-disclosing program, low risk -> REJECT", case_ZB_reject, "cannot be claimed"),
     ("ZC non-disclosing program, high risk -> ACCEPT", case_ZC_accept, None),
     ("ZG non-disclosing program, medium risk -> ACCEPT", case_ZG_accept, None),
-    ("ZD schema-5 KILL @ scope, no committed invariant -> ACCEPT", case_ZD_accept, None),
-    ("ZE invariant reframe + junk history, no superseded_by -> REJECT", case_ZE_reject, "commit.superseded_by"),
-    ("ZF committed mode != operating mode -> REJECT", case_ZF_reject, "operating-mode switch"),
     ("ZH high dup-risk, no collision differentiator -> REJECT", case_ZH_reject, "collision_differentiator"),
     ("ZI high dup-risk + differentiator -> ACCEPT", case_ZI_accept, None),
     ("ZJ config_dependency default_only -> REJECT", case_ZJ_reject, "config_dependency"),
     ("ZK CONFIRMED subclaim with no evidence -> REJECT", case_ZK_reject, "evidence must cite"),
     ("ZL model stage, no dedup-visibility assessment -> REJECT", case_ZL_reject, "discloses_reports"),
     ("ZM model stage with saturation present -> ACCEPT", case_ZM_accept, None),
+    ("AA REPORTABLE self-certified -> REJECT", case_AA_reject, "may not be self-certified"),
+    ("AB REPORTABLE independent review owed -> ACCEPT (provisional)", case_AB_accept, None),
+    ("AC REPORTABLE, no hardening pass -> REJECT", case_AC_reject, "hardening pass"),
+    ("AD NO_REPORTABLE_FINDING self-certified -> REJECT", case_AD_reject, "may not be self-certified"),
+    ("AE NO_REPORTABLE_FINDING review owed -> ACCEPT (provisional)", case_AE_accept, None),
     ("5  commits+issues+PRs evidenced -> ACCEPT", case_5_accept, None),
     ("5b upstream channels explicit -> ACCEPT", case_5b_accept, None),
     ("7b by-design -> KILL@refutation -> ACCEPT", case_7b_accept, None),

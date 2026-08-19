@@ -1,4 +1,4 @@
-# Adversarial Self-Review (solo role rotation)
+# Adversarial Review — independent-first
 
 ## Contents
 - Role 1 — Advocate (five protection layers, the eight false-positive patterns)
@@ -14,13 +14,15 @@ next**. The point is separation — the mind that imagined the attack is not, in
 mind that validates it. That is what removes confirmation bias; the discipline is the ordering,
 not any tooling.
 
-Solo rotation is the **portable floor, not the ceiling**: a single context cannot fully shed its
-own anchoring. If your harness can spawn an independent verifier — a fresh agent, session, or
-model handed only the repository and the candidate artifact, with none of your prosecution
-narrative — use it for Role 2 (Cold verifier). A genuinely fresh context is strictly stronger
-than re-reading your own trace "coldly," and the main agent must not author that verifier's
-verdict. When no such channel exists, the in-context role rotation below is the disciplined
-substitute; run it either way.
+**The review must be independent — self-review does not certify a final verdict.** A single
+context cannot shed its own anchoring, and measured on real hunts even a genuine self red-team
+over-rated its own reachability. So the *primary* mode is: **spawn a fresh-context agent** — a
+separate agent, session, or model handed only the repository and the candidate artifact, with none
+of your prosecution narrative — let it run the three roles below, and record *its* identifier in
+`adversarial_review.reviewer`. If your harness cannot spawn one, set `reviewer: "owed"`, **signal
+the user that an independent review is owed**, and treat the verdict as provisional. The validator
+rejects `reviewer: "self"` on `REPORTABLE` and `NO_REPORTABLE_FINDING`: you may run the rotation
+yourself first to strengthen the candidate, but that is preparation, never the certification.
 
 Run this pass after the strongest-refutation attempt and before proof. It can only lower
 confidence or set `KILL`; it never clears the `refutation` or `novelty` gates. Record the result

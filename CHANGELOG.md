@@ -1,5 +1,44 @@
 # Changelog
 
+## v0.5.0 — trustworthy depth: independence over self-certification
+
+A direction change, driven by two things the earlier analysis missed. First, the user pointed out
+that the 37-report failure distribution was **submitted-only** — it never looked at the hunts that
+produced nothing. Mining **247 local candidate.jsons** filled that gap and corrected the picture:
+the agent is not lazy about breadth-of-guesses (it fans out to 40–79 hypotheses per hunt), but a
+"clean" verdict **rests on static reading, not probing** — ~half of `NO_REPORTABLE_FINDING`s ran no
+executed probe, several concluding "clean" by trusting the *target's own tests*. And the one deep,
+trustworthy clean verdict in the corpus (`exodus_hunt/crypto-audit`) is the exemplar: multiple
+hypotheses each killed with executed evidence and a real causal red-team. Second, the user's
+standing needs: they don't trust a self-reported "no finding," their reports come out weak and get
+manually hardened in a fresh session, and they want adversarial review done by an *independent*
+agent, not self-graded.
+
+So this release reverses the prior "prune the depth machinery" instinct — that machinery is the fix,
+it was just barely deployed (18 of 247 files) and self-certified. The spine of v0.5.0 is:
+**self-certification is banned.**
+
+- **Independent review, not self-review.** `adversarial_review.reviewer` records who ran the review.
+  A `REPORTABLE` or `NO_REPORTABLE_FINDING` with `reviewer: "self"` is **rejected**; it must name an
+  independent fresh-context agent (given only the artifact) or be `"owed"` — which is accepted as
+  **provisional** and prints a signal for the user. Portable: works as an instruction whether or not
+  the harness can spawn subagents. (cases AA/AD reject self; AB/AE accept owed.)
+- **Hardening pass before a report.** A `REPORTABLE` now requires `hardening.status: "done"` — a
+  widen-blast-radius / escalate-severity / deepen-PoC pass (ideally by a fresh agent) — because the
+  reports ship weak (all 21 in the corpus self-rated dup-risk ≥ medium or severity ≤ Low). (case AC.)
+- **Static reading is not probing (warn).** A `NO_REPORTABLE_FINDING` with no executed probe warns
+  that the verdict rests on a static read; per the user's choice this is a nudge, not a block — the
+  trust comes from the independent reviewer, not a hard proof-type gate. New Exhaust-section line.
+- **Cuts folded in (the conservative first subtractive pass):** the `commit` block (guarded a
+  silent-reframe failure the data never shows, and needed two prior fixes) and the `patch_bypass`
+  block (shipped as seven `"n/a"` strings, and steered toward the dup-trap the §2B tiers warn about)
+  are removed; the §2B incomplete-fix tier *prose* stays. Two duplicate rationalization rows dropped.
+
+Suite 58 → 57 (six commit cases removed, five independence/hardening cases added). `adversarial-self-
+review.md` reframed to independent-first. Deferred (per the user's warn-only choice): a hard
+executed-probe gate on clean verdicts. Still owed: the empirical re-mine after more hunts to see
+whether trust and report strength actually improve.
+
 ## v0.4.7 — agentic-execution refinements (metadata honesty, lazy intent corpus)
 
 Answers a review on agentic-execution physics (state / context / metadata). Two of its four points

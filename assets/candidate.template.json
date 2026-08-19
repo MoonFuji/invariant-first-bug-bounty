@@ -2,12 +2,6 @@
   "schema_version": 5,
   "candidate_id": "",
   "decision_history": [],
-  "commit": {
-    "mode": "",
-    "invariant": "",
-    "committed_at": "",
-    "superseded_by": ""
-  },
   "hypothesis_queue": [],
   "intent_corpus": {
     "checked_at": "",
@@ -17,6 +11,7 @@
     "finding_match": "none"
   },
   "adversarial_review": {
+    "reviewer": "self",
     "advocate": {
       "layers_checked": [],
       "fp_pattern_hits": [],
@@ -42,24 +37,19 @@
       "defeated_counterexample": ""
     }
   },
+  "hardening": {
+    "status": "none",
+    "reviewer": "self",
+    "widened_radius": "",
+    "escalated_severity": "",
+    "deepened_poc": ""
+  },
   "variant_sweep": {
     "flow_shape": "",
     "grep_artifact": "",
     "siblings_checked": [],
     "alternate_transports_checked": [],
     "variants_found": []
-  },
-  "patch_bypass": {
-    "base_fix_ref": "",
-    "vectors": {
-      "alternate_entry": "n/a",
-      "config_gated": "n/a",
-      "default_state": "n/a",
-      "compat_branch": "n/a",
-      "parser_diff": "n/a",
-      "missing_norm": "n/a",
-      "sibling_path": "n/a"
-    }
   },
   "target": {
     "operating_mode": "SOURCE_ONLY",
