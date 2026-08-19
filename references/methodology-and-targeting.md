@@ -22,7 +22,7 @@ Before auditing, record in `candidate.json`:
 - Whether a hosted instance, owned accounts, local deployment, device, or upstream advisory route is available.
 - The project that owns the suspected code and would ship its fix.
 - Payout eligibility and whether the payout rail is usable.
-- **Dedup visibility** in `target.saturation`: whether the program *discloses reports* (can you dedup against its public history at all?), its ~90-day report volume, and whether your bug's class is a hot cluster. This is the single strongest predictor of a duplicate.
+- **Dedup visibility** in `target.saturation`: whether the program *discloses reports* — a **structural, verifiable** fact (does it publish a disclosed-reports feed?), read from the live page or HackerOne MCP, never memory. `reports_last_90d` and `hot_cluster` are **market dynamics training data cannot know** — pull them from HackerOne MCP (`GetProgramDisclosedReports` / stats) or leave null; never estimate them from memory. `discloses_reports` is the single strongest *verifiable* predictor of a duplicate.
 
 Score candidates 1–5 on each axis:
 
