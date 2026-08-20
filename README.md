@@ -3,153 +3,174 @@
 [![Agent Skill](https://img.shields.io/badge/Agent%20Skill-compatible-111827)](https://agentskills.io)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-An Agent Skill that makes AI-assisted bug-bounty research earn a report before writing one.
+A portable Agent Skill for evidence-gated, authorized vulnerability research. It treats a hunt as a campaign over many hypotheses, binds every candidate to a live-evidence target ledger, and blocks report-ready output until the final candidate clears proof, routing, novelty, hardening, and independent-review gates.
 
-Coding agents often find a dangerous function, build a local proof-of-concept, and jump to a polished report. That skips the questions triagers use to reject or duplicate submissions:
+## What it prevents
 
-- Can an attacker reach the path under the accepted threat model?
-- Does the behavior give the attacker a new capability?
-- Does the target own the faulty code and accept this proof type?
-- How does the root cause differ from prior reports and upstream work?
+AI-assisted hunts commonly fail in opposite directions:
 
-This skill requires one security invariant, evidence through the gate where research ends, the strongest benign explanation, negative controls, route ownership, and semantic duplicate analysis. Reportable candidates still require a complete source-to-effect trace. It stores those decisions in `candidate.json` and blocks report drafting until deterministic validation passes.
+- they stop after the first dead hypothesis and call the target clean;
+- they promote a real code defect without proving a new attacker capability;
+- they rotate away from viable targets based on remembered or paraphrased policy;
+- they submit valid but high-collision findings to invisible duplicate pools;
+- they certify their own analysis or review an early draft rather than the final claim.
+
+This skill makes those decisions explicit and auditable.
 
 ## Install
-
-Use the open Agent Skills installer with Codex, Claude Code, Cursor, OpenCode, or another supported agent:
 
 ```bash
 npx skills add MoonFuji/invariant-first-bug-bounty
 ```
 
-List what the installer detects without installing it:
-
-```bash
-npx skills add MoonFuji/invariant-first-bug-bounty --list
-```
-
-For a manual installation, clone the repository into the skills directory used by your agent. The directory name must remain `invariant-first-bug-bounty`:
-
-```bash
-git clone https://github.com/MoonFuji/invariant-first-bug-bounty.git invariant-first-bug-bounty
-```
-
-Common user-level locations include `~/.agents/skills/invariant-first-bug-bounty` for Codex-compatible setups and `~/.claude/skills/invariant-first-bug-bounty` for Claude Code.
-
-## Use it
-
-Ask your agent to invoke the skill explicitly on a program-authorized target:
+Common manual locations:
 
 ```text
-Use $invariant-first-bug-bounty to audit this in-scope source repository.
-Model one security invariant before broad recon. Persist the candidate state,
-trace the deepest reachable path, and return an evidence-backed terminal verdict.
+~/.agents/skills/invariant-first-bug-bounty
+~/.claude/skills/invariant-first-bug-bounty
 ```
 
-The skill treats these as valid outcomes:
-
-| Verdict | Meaning |
-|---|---|
-| `REPORTABLE` | The candidate cleared the report-stage evidence gates |
-| `HOLD` | A named threat-model, proof, routing, or novelty artifact is missing |
-| `KILL` | A gate failed or the alleged impact does not change attacker capability |
-| `ROUTE_ELSEWHERE` | Another project or disclosure channel owns the fix |
-| `NO_REPORTABLE_FINDING` | The selected invariant held after a complete trace and refutation attempt |
-
-## How it changes the hunt
+## Use
 
 ```text
-scope, route, and intent corpus
-      |
-security invariant
-      |
-hypothesis queue (creativity-gated, large/unfamiliar targets)
-      |
-source-to-effect trace + sibling path
-      |
-capability delta + strongest refutation
-      |
-adversarial self-review (advocate / cold verify / causal)
-      |
-accepted proof + negative controls
-      |
-root-cause fingerprint + route ownership
-      |
-persisted verdict
+Use $invariant-first-bug-bounty to run an authorized security campaign against
+this target. Create and validate the live-evidence target ledger first, map the
+surface, rank hypotheses, investigate one invariant at a time, continue after
+each candidate verdict, and do not draft a report until the target-bound report
+validator says REPORT READY.
 ```
 
-Broad regex recon sits behind the model gate. A suspicious sink cannot become a candidate until the agent records principals, protected assets, trust boundaries, state stores, enforcement points, and an invariant.
-
-## The mechanical gates
-
-Start a candidate:
-
-```bash
-cp assets/candidate.template.json /path/to/hunt/candidate.json
-python scripts/validate-candidate.py --stage model /path/to/hunt/candidate.json
-```
-
-Record a terminal decision after completing the evidence required through its gate:
-
-```bash
-python scripts/validate-candidate.py --stage decision /path/to/hunt/candidate.json
-```
-
-Before drafting a submission-ready report:
-
-```bash
-python scripts/validate-candidate.py --stage report /path/to/hunt/candidate.json
-```
-
-A nonzero report-stage exit means the report remains blocked. The correct response is to collect the named evidence, change the route, or preserve the non-reportable verdict. Editing unsupported assertions to satisfy the validator violates the workflow.
-
-The model-gated coverage sweep is optional:
-
-```bash
-bash scripts/recon-sweep.sh \
-  --candidate /path/to/hunt/candidate.json \
-  /path/to/in-scope-repository \
-  /tmp/recon-output
-```
-
-It writes search results to the chosen output directory. It does not verify vulnerabilities.
-
-## What is included
+## Workflow
 
 ```text
-SKILL.md                         Core invariant-first controller
-agents/openai.yaml               Skill-list metadata
-assets/candidate.template.json   Durable candidate and decision state
-references/                      Proof, targeting, hypothesis generation, adversarial self-review, and bug-class guidance
-scripts/validate-candidate.py    Model, decision, and report gates
-scripts/recon-sweep.sh           Optional model-gated source coverage
+live scope + policy + asset saturation
+                  |
+            target.json
+          SELECTED/HOLD/ROTATED
+                  |
+       candidate generated from target
+                  |
+       architecture + hypothesis queue
+                  |
+       one invariant traced end to end
+                  |
+       capability delta + refutation
+                  |
+       exact proof + controls + route
+                  |
+       novelty + collision assessment
+                  |
+       hardening + final fresh review
+                  |
+       candidate verdict; continue queue
 ```
 
-The core controller stays concise. Agents load detailed references only when the target architecture or proof route requires them.
+## Mechanical gates
 
-## Why duplicate analysis is different
+### 1. Select or rotate the target
 
-The skill fingerprints a candidate as:
+```bash
+cp assets/target.template.json /path/to/hunt/target.json
+python scripts/validate_hunt.py --stage target /path/to/hunt/target.json
+```
+
+The target ledger records live scope evidence, exact proof-policy text and accepted proof types, asset-level dedup visibility, and a structured `SELECTED`, `ROTATED`, or `HOLD` decision.
+
+### 2. Generate the candidate from the selected ledger
+
+```bash
+python scripts/start_candidate.py \
+  --target-ledger /path/to/hunt/target.json \
+  --output /path/to/hunt/candidates/H-001.json
+```
+
+This copies target identity and binds the candidate through `target_ledger_id`.
+
+### 3. Validate model, decision, and report stages
+
+```bash
+python scripts/validate_hunt.py \
+  --stage model \
+  --target-ledger /path/to/hunt/target.json \
+  /path/to/hunt/candidates/H-001.json
+
+python scripts/validate_hunt.py \
+  --stage decision \
+  --target-ledger /path/to/hunt/target.json \
+  /path/to/hunt/candidates/H-001.json
+
+python scripts/validate_hunt.py \
+  --stage report \
+  --target-ledger /path/to/hunt/target.json \
+  /path/to/hunt/candidates/H-001.json
+```
+
+A nonzero report-stage exit forbids drafting. `reviewer.mode: owed` is accepted only as a provisional decision; final report stage requires a completed independent or human review.
+
+## Target decisions are gate-aware
+
+A rotation cannot be justified by “too hard” or remembered policy. It carries a structured basis such as:
 
 ```text
-boundary|primitive|invariant|effect
+scope_ineligible
+proof_route_unavailable
+route_unavailable
+saturation
+payout_unavailable
+user_directed
 ```
 
-Agents record a query and outcome for the researcher's reports, program disclosures, upstream history, and recent advisories. They select one globally closest known match, compare all four fingerprint axes, and classify the candidate as `duplicate`, `distinct`, or `uncertain`. A clean public search does not prove novelty because private duplicate pools remain invisible. A recent advisory increases contestability instead of creating a novelty bonus.
+When evidence cannot be retrieved, use `HOLD` and record the missing artifact.
 
-When HackerOne MCP tools are available, `SKILL.md` defines the order for checking the researcher's reports, program disclosures, cross-program search, and close report matches.
+## A load-bearing caveat determines the gate
+
+Before reporting, state:
+
+> The attacker, who already holds X, crosses boundary Y to gain capability Z they could not exercise before.
+
+A caveat is fatal only when it negates the attacker-controlled source, crossed boundary, new capability, target-owned property, accepted proof route, or security-enforcing nature of the control. Ordinary limitations remain in the report and constrain scope or severity. This avoids both submitting informatives and deleting honest limitations merely because they sound cautious.
+
+## Independent review
+
+The author may run an adversarial self-pass to shape the proof, but final certification happens after proof, novelty, and a timestamped hardening pass. The reviewer attestation records mode, identifier, timestamp, artifact, and fresh-context status; the validator rejects review-before-hardening and decision-before-review ordering.
+
+A final candidate-level `NO_REPORTABLE_FINDING` also requires `closure_review` to challenge the closure and assess the adversarial probe or waiver. Its coverage-gap and remaining-hypothesis arrays are preserved as campaign continuation inputs; they are not required to be empty, and one closed candidate never certifies that the target is clean.
+
+## Files
+
+```text
+SKILL.md                         Core campaign controller
+agents/openai.yaml               Skill-list metadata and campaign prompt
+assets/target.template.json      Live-evidence target selection ledger
+assets/candidate.template.json   Bound per-invariant evidence state
+references/                      Methodology, hypothesis, review, and bug-class guidance
+scripts/validate_hunt.py         Authoritative target-bound validator
+scripts/start_candidate.py       Generate a candidate from a selected target
+scripts/validate-candidate.py    Candidate-core validator
+scripts/test_validate_hunt.py    Target/binding/review regression tests
+scripts/test_validate_candidate.py Existing candidate-gate regression suite
+scripts/recon-sweep.sh           Optional model-gated sink/variant triage
+```
+
+## Testing
+
+```bash
+python -m compileall -q scripts
+python scripts/test_validate_candidate.py
+python scripts/test_validate_hunt.py
+```
+
+GitHub Actions runs the same checks on pushes and pull requests.
 
 ## Limits
 
-This skill does not guarantee a vulnerability, novelty, bounty eligibility, severity, or acceptance. Its regex sweep is not a security scanner. The validator checks whether required evidence fields exist and agree with the verdict; it cannot prove that the evidence is true.
-
-An agent can still reason badly. Inspect the trace, reproduce the claimed boundary, and read the program policy before submission.
+The validators enforce structure and consistency; they cannot prove that a quoted policy, reviewer identity, or evidence artifact is truthful. Inspect the artifacts and reproduce the boundary before submission. A candidate verdict closes one hypothesis, not the target.
 
 ## Authorized research only
 
-Use this skill only on assets covered by a program's scope and safe-harbor terms or on systems you own. Use owned accounts and data, minimize impact, and stop when proof would expose or alter third-party data. Never use discovered credentials or pivot into unrelated systems.
+Use this skill only on systems you own or assets covered by current scope and safe-harbor terms. Use owned accounts and data, minimize impact, and never use exposed credentials or pivot into unrelated systems.
 
-Do not place live credentials, private program material, or undisclosed vulnerability details in public issues or pull requests.
+Do not publish private program material or undisclosed vulnerability details in issues, pull requests, examples, or changelogs.
 
 ## License
 

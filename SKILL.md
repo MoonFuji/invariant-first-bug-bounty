@@ -1,304 +1,369 @@
 ---
 name: invariant-first-bug-bounty
 description: >-
-  Performs evidence-gated security research for bug bounties and coordinated disclosure. Use when selecting or auditing an in-scope source repository, hosted application, API, mobile app, firmware, library, CLI, SDK, AI/LLM/MCP system, or when validating, routing, deduplicating, scoring, or writing a vulnerability report for HackerOne, Bugcrowd, Intigriti, YesWeHack, huntr, an upstream advisory, or the Internet Bug Bounty. Not for general code review, feature development, refactoring, or test-writing — only authorized security-vulnerability research and disclosure.
+  Performs evidence-gated, authorized security research for bug bounties and coordinated disclosure across source repositories, hosted applications, APIs, mobile apps, firmware, libraries, CLIs, SDKs, and AI/MCP systems. Use for target selection, source review, dynamic validation, routing, deduplication, or report preparation. Not for general code review, feature work, refactoring, or unauthorized testing.
 ---
 
 # Invariant-First Bug Bounty
 
 ## Core principle
 
-A hunt is a **campaign over many hypotheses, validated one at a time** — not a single guess. Map the surface, enumerate a ranked queue of candidate security invariants, then take them one at a time: model one invariant, trace it through the real entrypoint, validation, authorization, state transition, persistence, and observable effect, and reach a terminal verdict on it. Prefer one complete causal trace over many grep hits. The per-candidate discipline is *invariant-first*; the campaign around it stays *many hypotheses deep*.
+A hunt is a **campaign over many hypotheses, validated one at a time**. Map the target, rank candidate invariants, then take one hypothesis through a complete source-to-effect trace and a terminal decision. A candidate verdict closes that hypothesis, never the target.
 
-A terminal verdict on one candidate closes **that hypothesis, not the target**. `HOLD`, `KILL`, `ROUTE_ELSEWHERE`, and `NO_REPORTABLE_FINDING` are per-candidate outcomes: after each, update the queue and promote the next. The target is "clean" only when the ranked queue is exhausted with documented coverage (Depth contract) — never because one candidate died.
+The objective is ground truth, not a report:
 
-The task does not require a finding. Those outcomes are successful when supported by evidence **and reached after exhausting the investigation** — never when reached by stopping early. Restraint means not over-claiming; it is not permission to under-investigate (see "Exhaust before you conclude").
+- Persist through difficult traces and build the exact proof the claim requires.
+- Kill, hold, or route a candidate when the evidence says so.
+- Continue with the ranked queue after every candidate-level terminal verdict.
+- Call a target clean only after the high-value boundary inventory and queue are exhausted with evidence.
 
-## Exhaust before you conclude
+## Authorization modes
 
-The gates in this skill stop you from over-claiming. They are not permission to under-invest. Long-horizon agents fail *quietly*: they settle on a reading early and defend it, overestimate how much they have done, and terminate before the work is finished. A `HOLD`, `KILL`, or `NO_REPORTABLE_FINDING` reached by stopping early is that failure wearing restraint's clothes — so concluding costs the same evidence as reporting.
+Record one operating mode in the target ledger:
 
-- **Hard is not dead.** Rotate off an invariant only when it is proven dead (primitive absent, trace complete and safe, route dead), never because it is difficult. "This is fiddly / would take more hours" describes the work; it is not a reason to quit it.
-- **A wall is a redirect, not an exit.** When a trace dead-ends, pivot to another sink, hypothesis, or transport from the queue and keep going. Uncertainty is a cue to investigate, not to hand back.
-- **The hard proof is the job.** Building the exact shipped path, standing up the real instance, tracing the fifth sibling — that is the work, not an optional extra. The easy substitute chosen to avoid it is both a false proof and a dodge.
-- **Give-up is a claim; prove it.** To stop, record what you tried, what remains untried, and why each closed avenue is genuinely dead. "I did enough" is not a verdict; the documented exhaustion is.
-- **Static reading is not probing.** Concluding "clean" because you *read* that a guard exists — or because the target's own tests pass — is the untrusted verdict (measured: about half of clean conclusions ran nothing). A clean verdict you can trust means you *tried to break it*: run something that would have fired if the bug existed, and record it in `exhaustion.probes` (its command and the observed result). A clean verdict with no executed probe is a static read; the independent certification (step 11) — not your own confidence — is what makes it trustworthy.
+- **`SOURCE_ONLY`**: inspect public source and documentation; build and run code locally; use controlled fixtures, containers, databases, listeners, owned test data, and researcher-owned deployments. Do not send validation traffic to production or third parties, use discovered credentials, or touch data you do not own.
+- **`PROGRAM_HOSTED`**: interact only with the exact assets, accounts, methods, data, and rates explicitly permitted by current program rules. Use owned accounts and data.
 
-**Hustle toward the truth, not toward a report.** Spend maximum effort reaching ground truth — a real finding *or* a genuinely clean result — and let the gates keep whatever you find honest. The two never conflict: you grind to prove or disprove, and you never let the grind become a reason to over-claim.
+`SOURCE_ONLY` is an authorization boundary, not a static-analysis mode. Runtime-only classes such as races, replay, state-machine flaws, parser differentials, and consequential agent/tool execution require a running proof.
 
-## Think like an attacker, act within scope
+## 0. Select or rotate the target on live evidence
 
-Read the target the way a determined attacker would, not the way a checklist would. Assume the system *can* be broken and hunt for how: chain low-severity issues into high-severity ones, weaponize intended features, feed the input nobody validates, take the path the designers assumed no one would. The findings that pay and survive dedup are the ones a scanner and a cautious reviewer both miss — so be creative, lateral, and relentless in generating and chasing hypotheses (`references/hypothesis-generation.md`), and be resourceful in proof: build the exact executable, stand up the environment, reverse the binary, diff the patch, read the closed issues and the project's own security vocabulary.
-
-Two boundaries, held in opposite hands:
-
-- **Toward the target: unbounded imagination.** No idea is too devious to *consider*; the threat model has no ceiling. This is where the "figure it out" instinct belongs — spend it here without limit.
-- **Toward yourself: absolute discipline.** Scope, safe-harbor, and your own sandbox are lines you never cross. Reason about breaking the target; only *act* within the authorization you actually hold (Operating mode). Reaching out of scope, using a found credential, or touching an unauthorized system is not brilliance — it is the finding thrown away and the researcher exposed.
-
-And aim the ingenuity at the **truth, not the score**. Never game the objective: a fabricated PoC, an out-of-scope "win", or a bug claimed but not proven satisfies a metric while defeating the point — the same failure as a system that cheats a benchmark instead of solving it. The cleverest shortcut to a passing result is still a failure if it did not do the work. Spend the creativity on finding and *proving* what is real.
-
-## Operating mode
-
-Declare one mode before investigation. Store it in `target.operating_mode` and record its authorization basis in `target.scope_evidence`:
-
-- **`SOURCE_ONLY` (default):** inspect the repository and public documentation; build and run code locally; use local fixtures, containers, accounts, listeners, and test data. **This is an authorization scope, not a static-analysis mode:** running the code — spinning up a container, seeding a database, standing up the real CI workflow or MCP server, driving a concurrent script — is expected, and for many bug classes it is the *only* conclusive proof. A static trace is the hypothesis; the local execution is the proof. Do not send validation traffic to production or third-party systems, use discovered credentials, access another person's data, or extend access beyond the controlled environment.
-- **`PROGRAM_HOSTED`:** interact only with the exact hosted assets, accounts, data, methods, and rates explicitly permitted by current program rules. Use accounts and data you own. A repository being public or listed in scope does not by itself authorize hosted testing.
-
-Reason about realistic consequences in either mode, but execute only actions permitted by the declared mode. When authorization is unclear, remain in `SOURCE_ONLY` or set `HOLD`; do not infer permission.
-
-## Validation hierarchy
-
-Use the least-impact artifact that conclusively establishes the security boundary:
-
-1. Complete static source trace.
-2. Focused unit or regression test.
-3. Isolated local process.
-4. Disposable local container.
-5. Researcher-owned self-hosted deployment.
-6. Program-hosted owned account or instance, only in `PROGRAM_HOSTED` when explicitly authorized.
-
-Do not advance when a lower-impact level already establishes the capability delta required by the destination. But "least impact" means least *impact*, never least *effort*: a static trace (level 1) does **not** conclusively establish a runtime-manifesting flaw — a race/TOCTOU, an idempotency/replay or state-machine bug, a parser/protocol differential, or an AI-agent/MCP tool-execution effect. For those classes the lower level does not suffice; advance to a running process, seeded container, or self-hosted deployment and reproduce the effect live. Concluding them from source reading alone is a proof gap, not a finished proof. Reproduce sensitive effects with controlled equivalents: unique canaries instead of real secrets, benign files instead of system data, and local listeners instead of third-party or privileged services.
-
-## Target ledger — decide entry and exit on live evidence, before you invest
-
-Two decisions sink hunts before a candidate ever exists: **which target**, and **when to walk
-away** — and both were being made on memory. A viable target was skipped as "source-only is N/A" on
-a *paraphrased* policy the live text contradicted; deep, real findings were filed on saturated
-assets. Govern both with a lightweight ledger, created **first**, for every target you select *or*
-reject:
+Create the lightweight target ledger before deep reading:
 
 ```bash
 cp assets/target.template.json <hunt-dir>/target.json
-python scripts/validate-candidate.py --stage target <hunt-dir>/target.json
+python scripts/validate_hunt.py --stage target <hunt-dir>/target.json
 ```
 
-It carries only live-pulled facts: `scope` (the exact asset + `eligible_for_bounty`, from a live
-`GetProgramScopeDetail` pull — never memory), `poc_policy.quote` (a **verbatim** line of the live
-policy on what proof is accepted — you may not decide source-viability in *either* direction on a
-paraphrase), asset-level `saturation` (the asset's own resolved count, not the program's — where
-duplicates are decided), and a `disposition`: `SELECTED` or `ROTATED`. **A `ROTATED` is a terminal
-verdict** — it owes the same live-quoted evidence as a `KILL`, never a memory-based "this looks
-dead/hardened" skip. Rotating a target as "source-only is auto-N/A" requires the quoted policy line
-that says so; if you cannot quote it, you have not read the live policy and the rotation is unproven.
-Being light, it is the upfront checkpoint the heavier `candidate.json` is not — create it before the
-deep read, not at report time.
+The ledger is the authoritative pre-candidate record. It stores:
 
-## Mandatory candidate state
+- target identity, platform, route, asset type, exact repository/revision when applicable, and operating mode;
+- live scope status with a retrieval artifact;
+- the exact current proof-policy quote plus accepted proof types;
+- asset-level dedup visibility and saturation evidence;
+- a gate-aware decision: `SELECTED`, `ROTATED`, or `HOLD`.
 
-Persist every candidate outside the conversation so later sessions cannot silently override a failed gate:
+A rotation is a terminal target decision. It needs a structured basis and evidence, not “too hard,” remembered policy, or a guessed saturation label. When live evidence is unavailable, use `HOLD` and name what is missing.
+
+Target stages print one of:
+
+```text
+TARGET SELECTED
+TARGET ROTATED
+TARGET HOLD
+```
+
+Only a `SELECTED` ledger may produce candidates.
+
+## 1. Start a candidate from the selected target
+
+Generate the candidate so target identity cannot drift:
 
 ```bash
-cp assets/candidate.template.json <hunt-dir>/candidate.json
-python scripts/validate-candidate.py --stage model <hunt-dir>/candidate.json
+python scripts/start_candidate.py \
+  --target-ledger <hunt-dir>/target.json \
+  --output <hunt-dir>/candidates/H-001.json
 ```
 
-Fill `target` and `model` before broad recon. Update the same file as evidence changes; do not create a cleaner replacement that omits an earlier failed gate.
+The generated candidate carries `target_ledger_id` and copies the target identity, revision, mode, scope timestamp, and disclosure visibility. Do not hand-copy or silently replace those fields.
 
-**Schema 4 (v0.3.1) — two blocks are structured, not free text:**
-
-- `threat_model.strongest_refutation` is an object `{claim, kind, evidence, resolution, resolution_source, result}`. `kind` is `non_terminal` for an ordinary counter-argument, or a terminal kind: `owned_boundary_absent`, `capability_already_possessed`, `required_precondition_already_grants_effect`, `behavior_is_documented_contract`, `target_does_not_own_security_property`, `unreachable_under_supported_contract`. A terminal kind can never be `result: "refuted"` and can never reach `REPORTABLE` — if target-owned evidence genuinely defeats the objection, the honest `kind` is `non_terminal`. `REPORTABLE` additionally requires a non-empty `resolution` (the target-owned finding that defeats the claim), non-empty `evidence` (an independent artifact for it), and `resolution_source: "target_owned"`. A third party misusing the component is `resolution_source: "third_party"` and never clears the gate.
-- each `novelty.checks[]` carries `evidence: {method, query, artifact}`, required for every `checked`/`no_match` result once `classification` is `distinct`; the `upstream_history` check carries a `channels` array covering `commits`, `issues`, and `pull_requests`, each with its own executed-search `evidence`. On a `github.com/` repository, `issues` and `pull_requests` cannot be `unavailable` to reach `distinct`: an `unavailable` GitHub issue/PR channel must carry an attempted-search artifact (it means tried-and-failed, e.g. an API error), and it never counts as coverage — so a real search is required. A closest match whose `fingerprint` equals `root_cause_fingerprint`, or any match flagged `establishes_by_design`, blocks `distinct`/`REPORTABLE`.
-- `novelty.current_upstream_state` (`{ref, checked_at, path, result, evidence}`) records whether the current default branch still carries the flaw. `distinct` requires `result: "vulnerable"` with a fetch artifact; `fixed` forbids `distinct` (the old checkout is stale — `KILL @ novelty` or route as historical/advisory); `unavailable` caps the verdict at `HOLD @ novelty`.
-- a confirmed terminal refutation must land at the gate its `kind` implies (`TERMINAL_KIND_GATES`): e.g. `capability_already_possessed` → `KILL @ capability_delta`, `behavior_is_documented_contract` → `KILL @ refutation`, `target_does_not_own_security_property` → `KILL/ROUTE_ELSEWHERE @ ownership|route`.
-
-**Schema 5 — process evidence for ideation, independent review, exhaustion, and hardening.** Adds six blocks: `hypothesis_queue` (the ranked campaign ledger — ideas each with a `creativity_signal`, `priority`, and `status`), `intent_corpus` (quoted `intentional_behaviors`/`acknowledged_risks` with a `finding_match`), `adversarial_review` (the `reviewer` that ran it, plus `advocate`/`cold_verify`/`causal` results), `variant_sweep` (flow shape, siblings and alternate transports checked, variants found), `exhaustion` (what was `tried`, any executed `probes`, and the five `depth_contract` records), and `hardening` (the widen/reassess-severity/deepen pass before a report). **Report stage requires `schema_version >= 5`.** A `REPORTABLE` schema-5 candidate must additionally show the passes actually ran, not merely be present: `intent_corpus` with a `checked_at`, listed `sources`, and `finding_match != "intentional"`; an `adversarial_review.advocate` that recorded its `layers_checked` and a `strongest_defense` and does not set `blocks: true`; a `cold_verify.verdict == "CONFIRMED"` carrying a re-derived severity, a null `killed_subclaim`, and a `subclaims[]` decomposition (≥2 links, each `supported` — the explicit re-derivation, not a bare self-verdict); a written, evidenced `rebuttal` for every `advocate.fp_pattern_hits[]` entry; and, when every public novelty check comes back clean, a `private_duplicate_risk` of `medium` or `high`, never `low` (absence of public matches is not evidence about the invisible private pool). It must also carry a `target.saturation` assessment (owed by the **model stage** — assess dedup visibility before the deep trace, since duplicates are decided at selection). A non-disclosing program (`discloses_reports: false` — zero public dedup signal) cannot claim a low `private_duplicate_risk`; and in any **high-dup context** (`private_duplicate_risk: high`, a non-disclosing program, or a `hot_cluster`) REPORTABLE requires a `novelty.collision_differentiator` — the articulated reason this specific finding is low-collision despite the swarm (an honest `high` label alone did not stop a duplicate historically; a valid finding is not a novel one). Finally `proof.config_dependency` must be `none`: a finding that manifests only in a default/dev/template config a real deployment overrides (`default_only`), or that needs an insecure config no real deployment uses (`requires_insecure_config` — operator config is not attacker input), is `HOLD`/`KILL`, not a report. A vendor-shipped default that real deployments actually run *unchanged* is not `default_only` — it is the base case, `none`; `default_only` means an example/dev default a real deployment replaces. A schema-5 `NO_REPORTABLE_FINDING` requires the `exhaustion` record — `tried[]` and all five `depth_contract` fields — plus a present `intent_corpus` (built in step 1, not back-filled), so "the invariant held" costs the same articulated evidence a report does; and it may not carry a `cold_verify.verdict` of `CONFIRMED` (a confirmed finding is not a clean verdict — the review must audit the clean conclusion, `DISPROVED`/`UNCERTAIN`). **Neither `REPORTABLE` nor `NO_REPORTABLE_FINDING` may be self-certified:** `adversarial_review.reviewer` must name an independent reviewer or be `owed` (provisional, signalled to the user — the validator prints `PROVISIONAL`, not `READY`), never `self`; and the certification reviews the *finished* candidate (after proof and hardening), not an early draft. A `REPORTABLE` additionally requires a completed `hardening` pass (`status: "done"` with the widen/reassess-severity/deepen fields). Empty or contradictory fields never satisfy a gate; that is the "field satisfiable without the work" failure schema 4 closed for the refutation and novelty blocks.
-
-Legacy schema-3/4 candidates still validate at the model and decision stages, but report stage requires schema 5 — migrate a candidate before a REPORTABLE report so the ideation, self-review, and exhaustion gates apply.
-
-After setting any terminal verdict, validate the evidence accumulated through its terminal gate:
+Validate every later stage through the bound wrapper:
 
 ```bash
-python scripts/validate-candidate.py --stage decision <hunt-dir>/candidate.json
+python scripts/validate_hunt.py \
+  --stage model \
+  --target-ledger <hunt-dir>/target.json \
+  <hunt-dir>/candidates/H-001.json
 ```
 
-Before changing a prior verdict, append its decision object to `decision_history` with the evidence that changed it. Never delete history entries.
+Do not use `validate-candidate.py` alone as the final workflow for schema-5 hunts. It is the candidate-core validator; `validate_hunt.py` adds target binding, target-decision semantics, reviewer attestation, and final clean-review checks.
 
-Before writing any submission-ready report, run:
+## 2. Orient before anchoring
+
+Record:
+
+- principals and roles;
+- protected assets;
+- trust boundaries;
+- state stores;
+- authoritative authentication, authorization, canonicalization, uniqueness, and transition checks;
+- all meaningful entrypoints: HTTP, RPC, GraphQL, WebSocket, queue/cron, CLI, webhook/callback, file/parser, and agent/tool paths.
+
+Build an invariant space before selecting one invariant. Broad grep output is not a security model.
+
+## 3. Generate and rank hypotheses
+
+For large or unfamiliar targets, load `references/hypothesis-generation.md`. Store a durable queue with lifecycle states:
+
+```text
+queued → investigating → closed
+                     ↘ parked
+```
+
+Rank by expected value:
+
+```text
+reachability × owned-boundary confidence × impact × proofability ÷ contestability
+```
+
+Creativity is a ranking signal, not an admission gate. A simple, clearly reachable authorization bug outranks a speculative multi-stage chain. Never delete a rejected idea from history; close it with the evidence-backed reason.
+
+Promote one hypothesis at a time into `model.security_invariant`.
+
+## 4. Trace the invariant completely
+
+Follow:
+
+```text
+attacker-controlled representation
+→ transport/parser/entrypoint
+→ authentication
+→ normalization/canonicalization
+→ authorization/validation
+→ lookup/state read
+→ mutation or external effect
+→ persistence/uniqueness/cache
+→ observable security effect
+```
+
+Trace every load-bearing link from source, not from training priors. Check at least one meaningful sibling or alternate version and re-derive attacker control for each sibling independently.
+
+A dead end is a pivot, not an excuse to stop the target. Close the current hypothesis only after the relevant path is complete enough to prove why the capability delta cannot exist.
+
+## 5. State the capability delta
+
+Write four concrete statements:
+
+1. The attacker starts with `<access>`.
+2. The attacker controls `<input or state>`.
+3. The target performs `<security-relevant action>`.
+4. The attacker gains `<new capability>`.
+
+If statement 4 is already granted by statement 1, the candidate dies at `capability_delta`.
+
+For filesystem and process claims, record the runtime principal, permissions, sandbox/container boundary, exact path, and execution trigger. Path control is not permission bypass, and a later privileged helper does not retroactively elevate an earlier operation.
+
+## 6. Attempt the strongest refutation
+
+Test the best benign explanation before proof:
+
+- the input is trusted deployer/operator configuration;
+- the caller already owns the endpoint, peer, secret, host, or capability;
+- production adds an authoritative re-check;
+- the path is unreachable under the supported contract;
+- the behavior is explicitly documented by design;
+- the defect exists only in a downstream integrator;
+- another project owns the security property and fix.
+
+Persist one structured strongest refutation. Terminal refutations cannot be relabeled or waved past to reach a report.
+
+### A load-bearing caveat determines the gate
+
+Before `REPORTABLE`, write:
+
+> The attacker, who already holds X, crosses boundary Y to gain capability Z they could not exercise before.
+
+A caveat is **load-bearing** when it negates the attacker-controlled source, crossed boundary, new capability, target-owned property, accepted proof/deployment route, or security-enforcing nature of the control. That caveat determines `HOLD` or `KILL` until evidence removes it.
+
+Examples:
+
+- “requires control of the victim’s environment” may mean the precondition already grants the effect;
+- “does not prove the product-facing input reaches this executable” is a proof gap;
+- “does not bypass authentication” may be fatal when the claimed control is only a confirmation prompt, but it is not fatal to an authenticated cross-tenant authorization bug;
+- “source-only proof is not accepted” is fatal only when the current policy and route actually require a hosted proof.
+
+Non-load-bearing limitations remain in the report and constrain scope or severity. Do not hide honest limitations merely because a prior draft used a fatal hedge.
+
+Read `references/worked-examples.md` for calibrated examples.
+
+## 7. Shape the proof with a self-run adversarial pass
+
+Before proof, run the Advocate, Cold verifier, and Causal challenger from `references/adversarial-self-review.md` yourself. This is preparation only. It identifies what evidence a skeptic would demand and can lower confidence or kill the candidate.
+
+Do not set final reviewer identity during this pass.
+
+## 8. Prove the exact boundary
+
+Keep three levels distinct:
+
+1. **Primitive fidelity**: the underlying mechanism can produce the effect.
+2. **Executable fidelity**: the exact pinned/shipped method or binary, real invocation, and shipped configuration produce it.
+3. **Boundary fidelity**: an actor permitted by the program can supply the load-bearing representation through the product-facing path and cross a target-owned boundary.
+
+Use the level required by the destination and claimed impact. Capture:
+
+- exact version/revision;
+- setup and command/configuration;
+- observable effect artifact;
+- exit status and ordering when relevant;
+- at least one negative control;
+- production or destination relevance.
+
+For a clean candidate, add a researcher-designed adversarial probe to `exhaustion.probes` with:
+
+```text
+hypothesis
+command
+would_fire_if_vulnerable
+observed
+result
+```
+
+Running only the target’s existing positive tests is not an adversarial probe.
+
+## 9. Verify route ownership
+
+Confirm which project owns the faulty implementation, would ship the fix, and accepts the available proof type. A wrapper or product that bundles an unmodified vulnerable dependency does not automatically own the bug.
+
+Use `ROUTE_ELSEWHERE` when another disclosure rail owns the fix.
+
+## 10. Measure novelty and contestability
+
+Fingerprint the root cause:
+
+```text
+boundary | primitive | invariant | effect
+```
+
+Search:
+
+1. your own outcomes;
+2. program disclosures;
+3. upstream commits, open/closed issues, and pull requests;
+4. current default-branch state;
+5. recent advisories and close semantic matches.
+
+A clean public search does not prove novelty. On GitHub, issue and PR searches plus a current-branch fetch are mandatory for `distinct`; `git log` alone is insufficient.
+
+In high-duplicate contexts, record a concrete collision differentiator. Do not submit merely because the defect is valid.
+
+## 11. Harden, then certify the finished candidate independently
+
+For a reportable candidate, harden the final claim and record `hardening.completed_at`:
+
+- **widen**: affected assets, versions, siblings, and transports;
+- **reassess severity**: raise, hold, or lower it based on demonstrated evidence;
+- **deepen proof**: remove remaining ambiguity and improve controls.
+
+Then spawn a fresh-context reviewer and provide only the repository and finished candidate artifact, not the author’s prosecution narrative. The reviewer rewrites the review fields and records a structured attestation:
+
+```json
+{
+  "mode": "independent_agent",
+  "id": "review-session-id",
+  "reviewed_at": "2026-08-20T04:00:00Z",
+  "artifact": "reviews/H-001.json",
+  "fresh_context": true
+}
+```
+
+`human` is also valid. The target-bound validator rejects a review timestamp earlier than `hardening.completed_at` or later than `decision.decided_at`. `self` never certifies a final `REPORTABLE` or `NO_REPORTABLE_FINDING`.
+
+When independent review cannot run, set mode `owed` and stop at a **provisional decision**. Final report stage rejects `owed`; it never prints `REPORT READY`.
+
+### Final candidate-closure certification
+
+A final candidate-level `NO_REPORTABLE_FINDING` additionally requires `closure_review`:
+
+- `verdict: DEPTH_SUFFICIENT`;
+- at least one load-bearing closure challenged with evidence;
+- a sufficient adversarial probe, or a narrowly evidenced waiver;
+- explicit `coverage_gaps` and `remaining_high_value_hypotheses` arrays.
+
+Those last two arrays are continuation inputs, not permission to erase unfinished work. A candidate may close while the campaign still has H-002, H-003, or an uncovered boundary; preserve them and continue at step 12. An `UNCERTAIN` reviewer result about the current closure is `HOLD`, not `NO_REPORTABLE_FINDING`. One candidate-level closure never certifies that the target is clean.
+
+## 12. Decide, validate, and continue
+
+Candidate decision:
 
 ```bash
-python scripts/validate-candidate.py --stage report <hunt-dir>/candidate.json
+python scripts/validate_hunt.py \
+  --stage decision \
+  --target-ledger <hunt-dir>/target.json \
+  <hunt-dir>/candidates/H-001.json
 ```
 
-**A nonzero exit forbids report drafting.** Do not rewrite uncertain claims merely to satisfy the validator. Collect the named evidence, change the route, or keep the non-reportable verdict.
-
-## Workflow
-
-1. **Verify target, mode, and route — start with the target ledger.** Before any deep read, create `target.json` and run `--stage target` (see *Target ledger*): a rotation away from a target is a terminal verdict owed live-quoted evidence, not a memory skip. Record the operating mode, exact program, asset, repository, commit/release, scope evidence, bounty eligibility, and when scope was checked. A listed or public repository is not proof the exact asset is bounty-eligible or that source-only proof is accepted — verify eligibility and the PoC policy live before investing, since some programs auto-N/A source-only analysis (`references/platform-operations.md` §0). Assess **dedup visibility** into `target.saturation`. `discloses_reports` is a *structural, verifiable* fact — does the program publish a disclosed-reports feed you can dedup against? — so read it from the live program page or HackerOne MCP, never from memory. `reports_last_90d` and `hot_cluster` are market dynamics **training data cannot know**: fill them only from HackerOne MCP (`GetProgramDisclosedReports` / program stats) or leave them null — never guess (a hallucinated "quiet" number is worse than an honest null). Duplicates are the dominant failure mode and are decided here, not at proof — a non-disclosing program cannot claim a low `private_duplicate_risk`, and an obvious-class finding on a swarmed program is a rotate, not a submission (but a bespoke, low-collision Tier-3 finding can still pay there — `references/methodology-and-targeting.md` §1). Identify the project that owns the vulnerable code and would ship the fix. Build a small **intent corpus — but lazily.** Read only the *cheap, high-signal* top-level security docs upfront (`SECURITY.md`, README security notes, a `THREAT_MODEL` summary), and quote (never paraphrase) two lists into `candidate.json.intent_corpus` — `intentional_behaviors` (what the project explicitly calls by-design / not-a-vuln / out-of-scope / accepted-risk) and `acknowledged_risks` (classes it explicitly treats as in-scope). **Do not read every ADR or sweep all pragmas upfront** — on a large target that starves the context before any code is read; pull the specific ADR / design doc / pragma relevant to the *promoted hypothesis* when you promote it (step 3). A finding matching an intentional_behavior is `KILL @ refutation` (`behavior_is_documented_contract`); one matching an acknowledged_risk is strengthened. Do not infer from absence.
-2. **Build the security model, then orient before you anchor.** Record principals, protected assets, trust boundaries, state stores, and enforcement points. Enumerate the request-handling surface broadly — not only HTTP routes but RPC/GraphQL/WebSocket handlers, queue/cron consumers, CLI subcommands, and webhook/callback entrypoints (`references/bug-class-taxonomy.md` §20A) — and note the highest-risk boundaries. This produces the *invariant space* (a set of candidate invariants); do not commit to one yet. Read selectively until these are concrete; grep output is not a model.
-3. **Generate and rank hypotheses, then promote one invariant.** On a large or unfamiliar target, run one ideation pass (`references/hypothesis-generation.md`): cycle the attack modes, run a pre-mortem specific to this system, and ask of every defensive construct "what did the author fear?" Each hypothesis carries a **creativity signal** — one line on why a scanner would miss it — used to weigh novelty and duplicate risk, **not** as an admission gate: do not discard a reachable, high-impact, owned-boundary hypothesis merely because it is an obvious sink. Rank the queue by expected value (reachability × owned-boundary confidence × impact × proofability ÷ contestability), store it in `candidate.json.hypothesis_queue` (these are hypotheses, not candidates), and promote exactly one to the committed invariant; keep the rest as the ranked reinvestment queue. When the highest-value invariant is already obvious from step 2, promote it directly — but still record the queue.
-4. **Test relevance, then trace.** State a provisional security boundary and plausible new capability. Trace far enough to *establish* whether a meaningful capability delta is possible — do not judge it from a glance. If the completed trace disproves the delta, close this hypothesis (record why) and promote the next queued one at step 12; that closes one candidate, never the target. Otherwise follow untrusted input through validation/canonicalization, authorization, mutation/read, persistence or external effect, and at least one safe or parallel sibling. When source code is used by a managed product, separately trace the product-facing input through control-plane validation, storage, serialization, and runtime configuration; product documentation proves that a field exists, not that an attacker-controlled representation reaches the cited code unchanged. Re-trace source provenance for every sibling effect; similar sinks do not inherit attacker control from the original path.
-5. **Find the capability delta.** State what the test principal can do before and after the complete trace. Equal capabilities mean no security impact. For filesystem or process claims, record the exact runtime principal and permissions at the sink: path selection is not permission bypass, and a later privileged helper does not elevate an earlier operation.
-6. **Attempt the strongest refutation.** Test the best benign explanation: intended sharing, attacker already controls the secret/config/peer, production hardening, safe caller contract, unreachable event shape, or downstream misuse. Treat “compromised backend,” “leaked privileged credential,” and “MITM under weak configuration” as unevidenced preconditions until a target-owned path or policy establishes a less-trusted actor who can reach them. An unresolved refutation means `HOLD`; a confirmed refutation means `KILL` or honest downgrade. **Terminal refutations cannot be waved past.** If the best benign explanation is any of these, the verdict is `KILL @ refutation` (or `KILL @ capability_delta`) regardless of how clean the reproduction is: (a) the input is developer/operator-controlled configuration at the owned boundary, not attacker input (the component is not the authorization policy); (b) the new capability requires a precondition the attacker does not already hold and the owned boundary does not grant; (c) the effect only appears when a *third party* misuses the component, so the fix is defense-in-depth in the dependency, not a vulnerability in the owned code. Finding an integrator who misuses the component does **not** move the owned boundary and does **not** refute (a)–(c). You may not set `refutation_result: "refuted"` on a terminal refutation to proceed to `REPORTABLE`; write it into `strongest_refutation` and stop. **The caveat is the verdict.** Write the one-sentence attacker model — *"the attacker, who already holds X, crosses boundary Y to gain capability Z they could not do before"* — and if you cannot write it without a hedge, that hedge is the verdict, not a footnote. A finding whose own draft says "does not bypass authentication," "does not prove production exposure," "requires control of env/config," or "may be non-core" is informative until the hedge is removed by evidence; the real code defect is not yet a finding. See `references/worked-examples.md` (four real informatives that each stated their own disqualifier and were submitted anyway).
-7. **Adversarial rotation to shape the proof (preparation, not certification).** Run the review roles (`references/adversarial-self-review.md`: Advocate across five protection layers + eight FP patterns, Cold-verifier re-deriving severity from MEDIUM, Causal-challenger's intervention/counterfactual/confounder) against your own finding **now**, to decide what proof would convince a skeptic and to fill the `advocate`/`cold_verify`/`causal` blocks. This is preparation: a self-run rotation does **not** certify a verdict, because a single context over-rates its own findings (measured). The **independent certification** is a separate, later step (step 11) that must review the *finished* candidate — do not set `adversarial_review.reviewer` to a self identifier here.
-8. **Prove the exact boundary.** Distinguish three claims: the primitive works, the exact shipped executable path works, and the program-owned deployment is reachable. A substitute client/runtime or helper that copies the cited lines clears only the first claim. Use the real method/entrypoint, exact pinned binary, generated invocation, and shipped configuration for the second; trace the accepted external input into that invocation for the third. Capture an observable side effect, version and command/config artifacts, exit status, and a negative control. A side effect completed before a later fixture failure may still prove the narrow effect, but disclose the failure and never describe the whole workflow as successful.
-9. **Route before reporting.** Verify that the destination owns the faulty code and accepts this proof class. A real bug in a dependency may require an upstream advisory rather than the product's bounty program.
-10. **Measure contestability.** Fingerprint the root cause as `boundary|primitive|invariant|effect`; record a query and outcome for your own reports, program disclosures, upstream history, and recent advisories. Select one globally closest known match and compare all four fingerprint axes.
-11. **Harden, certify independently, then decide and persist.** For a `REPORTABLE`, first run a **hardening pass** — ideally a fresh agent: widen the blast radius (more affected assets/versions/siblings), reassess severity on the evidence (does it chain into something bigger; is the impact under- *or over*-claimed?), and deepen the PoC. Record it in `candidate.json.hardening` (`status: "done"`); reports ship weak without it. **Then run the independent certification on the finished candidate** — spawn a fresh-context agent, hand it only the completed candidate and the repo (proof and hardening included, none of your prosecution narrative), and record its identifier in `adversarial_review.reviewer`. Certify last, on what will actually be submitted: a reviewer that ran before the proof and hardening never saw the final claim. If your harness cannot spawn an independent agent, set `reviewer: "owed"`, **signal the user that an independent review is owed**, and treat the verdict as provisional (the validator prints `PROVISIONAL`, not `REPORT READY`). The validator rejects `reviewer: "self"` on `REPORTABLE` and `NO_REPORTABLE_FINDING`. Then set exactly one terminal verdict and `decision.gate`, name failed gates or missing evidence, and run `--stage decision`.
-12. **Continue the campaign.** A terminal verdict closes this candidate, not the target. Record the promoted hypothesis's outcome in its `hypothesis_queue` entry, then promote the next-highest queued hypothesis and return to step 4. Conclude the target only when the queue is exhausted **and** the Depth-contract clean record exists for each high-value boundary — or when you are drafting a `REPORTABLE` and the user asked only for the first finding. A `KILL`/`HOLD`/`NO_REPORTABLE_FINDING` is never the end of the hunt on its own.
-
-Copy this checklist into your working notes and check off each gate only when an artifact in `candidate.json` backs it — never tick a box you cannot defend:
-
-```
-- [ ] 0.  Target ledger: live scope + quoted policy + asset saturation; disposition set .. (target)
-- [ ] 1.  Target, mode, route, intent corpus recorded ............ scope
-- [ ] 2.  Security model + invariant space enumerated ........... model
-- [ ] 3.  Hypotheses ranked, one invariant promoted ............. (ideation)
-- [ ] 4.  Relevance tested; source-to-effect trace complete ..... relevance/reachability
-- [ ] 5.  Capability delta stated: before ≠ after ............... capability_delta
-- [ ] 6.  Strongest refutation attempted and resolved ........... refutation
-- [ ] 7.  Adversarial rotation shapes the proof (prep, not certification) (self-review)
-- [ ] 8.  Exact shipped-path proof + negative control captured .. proof
-- [ ] 9.  Route ownership verified .............................. route/ownership
-- [ ] 10. Root-cause fingerprint + novelty search → distinct .... novelty
-- [ ] 11. Hardened + independently certified on the final candidate (hardening/independence)
-- [ ] 12. One terminal verdict + gate persisted; validator run .. reportability
-- [ ] 13. Queue updated; next hypothesis promoted or coverage done (campaign)
-```
-
-**Scale the process to the target.** The full stack fits a large product or service. On a small, single-purpose `SOURCE_ONLY` library or CLI the load-bearing core is the intent corpus, one invariant, the source-to-effect trace, exact-path proof, and novelty; the ideation queue and variant sweep are often a one-line "n/a — single surface" and earn their cost only as the target's surface and history grow. Do not cargo-cult empty process blocks onto a toy target, and never skip the core gates — capability delta, refutation, proof, novelty — on a hard one.
-
-## Depth contract
-
-Do not rotate merely to make a hunt look broad. Continue while the selected invariant has untraced enforcement points or meaningful siblings. Rotate only when the primitive is absent, the trace is complete and safe, the route is dead, or contestability makes the expected value poor. Difficulty is never a rotation trigger: rotate on proof of death, not on how hard or slow the trace is. Two rotations look identical from outside: rotating because an invariant is *proven low-value* — high contestability, low payout band, huge proof cost, and a higher-EV item waiting in the queue — is legitimate **only when you record that rationale**; rotating because it is *hard* is the sunk-cost failure the STOP flags name. Exhausting one invariant is not exhausting the program.
-
-Before claiming a repository is clean for an invariant, record:
-
-- The entrypoint and attacker-controlled value.
-- The intended invariant and authoritative enforcement point.
-- The complete source-to-effect trace.
-- At least one sibling or alternate version checked.
-- The strongest attempted counterexample and why it failed.
-
-These five are the `exhaustion.depth_contract` fields, and a schema-5 `NO_REPORTABLE_FINDING` does not validate without them plus `exhaustion.tried[]` — the clean-repository record is enforced, not merely urged. A clean conclusion is a claim, owed the same articulated evidence as a report.
-
-Clean *for the target* is a higher bar than clean for one invariant: it requires the ranked hypothesis queue to be exhausted and this five-item record to exist for every high-value boundary you enumerated in step 2 — or an evidence-backed reason each remaining boundary is not applicable. One dead invariant is one queue entry closed, not a clean target.
-
-Broad sink recon is a secondary coverage tool. Run it only after model validation:
+Final report readiness:
 
 ```bash
-bash scripts/recon-sweep.sh --candidate <hunt-dir>/candidate.json <repo-dir> [output-dir]
+python scripts/validate_hunt.py \
+  --stage report \
+  --target-ledger <hunt-dir>/target.json \
+  <hunt-dir>/candidates/H-001.json
 ```
 
-Never promote a regex hit directly to a candidate. Attach it to an invariant and complete the trace first.
+A nonzero exit forbids drafting. Add evidence rather than editing assertions to satisfy the validator.
 
-**Variant sweep on any confirmed root cause.** The moment a trace confirms a violation, before writing the report, sweep for the same root cause (not the same syntax): (a) grep the exact flow shape `source-type → transform → sink-type` repo-wide; (b) check sibling components sharing the trust boundary, data-flow pattern, framework idiom, or dependency; (c) check **alternate transports** for the same logic — HTTP, WebSocket, gRPC, GraphQL resolvers, CLI subcommands, and queue/cron consumers. Each variant is its own candidate with its own trace; a variant does not inherit the original's proof. Record the sweep in `candidate.json.variant_sweep` even when it finds nothing — an unsearched sweep is a second submission left on the table. Prioritize the highest-likelihood siblings and record confirmed variants as their own candidates rather than fully tracing every one in this pass; a representative sweep of the most probable siblings is enough to move on. Stop widening when the abstraction ladder's false-positive rate climbs (`references/emerging-surfaces-and-techniques.md` §2C) — do not chase every superficially similar endpoint.
+After every terminal candidate verdict:
 
-## Proof and routing matrix
+1. update the queue entry in place;
+2. preserve the candidate artifact and decision history;
+3. promote the next highest-value queued hypothesis;
+4. continue until the target’s high-value boundaries are covered or the user explicitly requested first-finding mode.
 
-| Asset/destination | Minimum persuasive proof |
-|---|---|
-| Hosted product/API | In `PROGRAM_HOSTED` only: owned accounts or owned instance; comparison-account marker/state change plus anonymous/nonexistent controls where relevant |
-| Source-code program | Exact pinned executable and generated invocation using shipped behavior; if claiming managed-product impact, trace the external input through platform validation/configuration into that invocation; confirm the program accepts local/source proof |
-| Library/SDK/upstream | Executable regression test, realistic caller contract, and usually maintainer fix/advisory/CVE for upstream routing |
-| Parser/CLI/firmware/hardware | Executable artifact on the real parser/runtime/device or an exact enforcement model accepted by the destination |
-| AI/agent/MCP | Authentic reachable event/tool path and consequential side effect; fabricated model/service output alone is insufficient |
-
-Read `references/grey-box-dynamic-testing.md` when a live instance exists. Read `references/methodology-and-targeting.md` for route selection, contestability, proof details, severity, and report structure.
-
-## Duplicate-risk protocol
-
-When HackerOne MCP is available, begin with your own outcomes, then search the target:
-
-1. `mcp__hackerone__GetMyHackerOneReports` — extract root-cause fingerprints from duplicates and valid reports.
-2. `mcp__hackerone__GetProgramDisclosedReports` — inspect the program's disclosed component/class history.
-3. `mcp__hackerone__SearchDisclosedReports` — search the invariant, component, primitive, and effect across programs.
-4. `mcp__hackerone__GetHackerOneReportByID` — open close matches instead of comparing titles only.
-5. Check GHSA/CVE, changelog, branches, releases, and `git log -p` for the exact enforcement path.
-6. **Search the owning repo's open AND closed issues/PRs — this is mandatory, not prose.** `git log` and advisories are not a substitute: a live PR or a closed "by-design" issue is invisible to them. Run and paste the actual output (commands + hit URLs) into the candidate, e.g. `gh pr list --repo <owner/repo> --state all --search "<class terms>"` and `gh search issues --repo <owner/repo> "<invariant/component terms>"`. A closed issue that requests the *opposite* of your fix (users wanting the current behavior) is by-design evidence and downgrades the finding.
-7. **Confirm the current default branch is still vulnerable** before claiming `distinct`: fetch the exact line on `main`/`master` (`gh api repos/<owner/repo>/contents/<path>`), or the finding may already be fixed upstream.
-
-For each source, persist the query, check time, and one result: `checked` with its closest match, `no_match`, or `unavailable` with a reason. `no_match` on the issue/PR and current-branch sources (6–7) requires the pasted command/URL that produced it — a prose `no_match` without an executed-search artifact is treated as **not searched**, which forbids `distinct` and caps the verdict at `HOLD @ novelty`. Do not use an empty array to blur “not searched” into “no result.” Rank the retrieved matches, store one `closest_known_match`, compare its boundary, primitive, invariant, and effect, then set `novelty.classification` to `duplicate`, `distinct`, or `uncertain`.
-
-No public match is weak evidence, not proof of novelty; private duplicate pools remain invisible. A recent advisory or famous component raises contestability. `REPORTABLE` requires `distinct`; a known matching root cause is `KILL @ novelty`; unresolved comparison evidence is `HOLD @ novelty`.
-
-Cross-model agreement is hypothesis prioritization, not validation. Models share training data, public advisories, and prompt framing. Only independent artifacts can clear a gate.
-
-## Terminal verdicts
+## Candidate verdicts
 
 | Verdict | Meaning |
 |---|---|
-| `REPORTABLE` | Every report-stage field is evidenced and the validator passes |
-| `HOLD` | The invariant violation is plausible, but named proof, threat-model, route, or novelty evidence is missing |
-| `KILL` | A gate is disproven, impact is unchanged, the behavior is intended, or the candidate is covered/fixed |
-| `ROUTE_ELSEWHERE` | The bug may be real, but another project or disclosure rail owns the fix |
-| `NO_REPORTABLE_FINDING` | The *investigated invariant* held after a complete trace and refutation attempt — this closes the current hypothesis, not the target; return to the queue (Core principle) |
+| `REPORTABLE` | Full trace, proof, route, novelty, hardening, and final independent review pass |
+| `HOLD` | A named artifact or gate remains unresolved |
+| `KILL` | A gate is disproven, capability is unchanged, behavior is intended, or the candidate is covered/fixed |
+| `ROUTE_ELSEWHERE` | Another project or disclosure rail owns the fix |
+| `NO_REPORTABLE_FINDING` | This investigated invariant held after a complete trace, adversarial probe/waiver, and final closure review |
 
-`decision.gate` records where research ended: `scope`, `route`, `model`, `relevance`, `reachability`, `capability_delta`, `refutation`, `proof`, `ownership`, `novelty`, or `reportability`. `HOLD` requires completed prerequisite evidence plus the specific missing item. `KILL` requires evidence through the failed gate, not fabricated downstream fields. `ROUTE_ELSEWHERE` requires verified ownership and routing evidence. Full trace, proof, route, and novelty evidence remain mandatory for `REPORTABLE`; a complete trace and refutation remain mandatory for `NO_REPORTABLE_FINDING`. None of these verdicts concludes the *target* on its own — each is one candidate closed, and the campaign continues until the queue is exhausted (Core principle, Depth contract).
+None of these verdicts alone means the target is clean.
 
-## Red flags — STOP
+## Depth contract
 
-These are the symptoms of an about-to-fail moment. The instant you notice yourself doing any of them, stop and return to the named gate — the urge itself is the signal that the discipline is being skipped:
+Do not rotate because a trace is difficult or slow. Rotate when evidence shows the primitive is absent, the path is complete and safe, the route is dead, or a documented higher-EV hypothesis dominates.
 
-- Opening a report draft or writing a summary before `--stage report` exited 0. → run the validator first; a nonzero exit forbids drafting.
-- Naming an impact you have not reproduced — cloud secrets, cross-tenant data, RCE, "P1". → claim only the captured effect at the `capability_delta` gate.
-- Reaching for a substitute client, copied lines, or a helper "because the real path is fiddly." → that is primitive evidence only; the `proof` gate needs the exact shipped executable path.
-- Editing a `candidate.json` field to make the validator pass instead of collecting the evidence it names. → add evidence, not assertions; preserve the failed gate.
-- Marking a refutation `refuted`, or relabeling a terminal kind as `non_terminal`, so you can proceed. → write it into `strongest_refutation` and take the `KILL`.
-- Calling a repository clean without the five Depth-contract records. → you have skimmed, not looked; produce the entrypoint, invariant, trace, sibling, and defeated counterexample.
-- Treating another model's agreement, a CVE precedent, a famous component, or a closing novelty window as if it cleared a gate. → none of them clear a gate; only an independent artifact does.
-- Feeling the pull to submit *because* rent is due, hours are sunk, or the program "clearly wants a finding." → pressure is not evidence; it is the exact condition under which the gates must hold.
-- Writing an impact-hedge into the draft — "does not bypass authentication," "does not prove production exposure," "requires control of env/config," "may be non-core/beta." → that clause is the verdict, not a footnote. The finding is informative until the hedge is removed by evidence; `KILL`/`HOLD`, do not submit past your own caveat.
-- Rotating away from a target because memory says it is "hardened," "N/A for source," or "saturated." → a rotation is a terminal verdict; open the target ledger and quote the live policy / live saturation number, or you are skipping a possibly-viable target on a paraphrase (matomo).
+Before closing an invariant as clean, preserve:
 
-If you cannot proceed without doing one of these, the honest verdict is `HOLD` with the missing evidence named — that is a success, not a failure.
+- entrypoint and attacker-controlled value;
+- invariant and authoritative enforcement point;
+- complete source-to-effect trace;
+- sibling or alternate version checked;
+- strongest counterexample and why it failed;
+- adversarial probe or evidenced waiver.
 
-## Red flags — KEEP GOING
+## Red flags
 
-The mirror of the flags above. These are the symptoms of quitting too soon; a verifier-driven early exit is a measured failure mode, not diligence. Noticing any means the work is not done — do not stop:
+Stop and return to the named gate when you notice:
 
-- Concluding "clean" or "no findings" after reading a handful of files, without the five Depth-contract records. → you skimmed; produce them.
-- Rotating off a target because it is hard, slow, or unfamiliar rather than proven dead. → hard is not dead.
-- Reaching for the easy substitute PoC, or a "theoretical" impact, to avoid building the real path. → build the real path.
-- Declaring a race, TOCTOU, idempotency/replay, state-machine, or CI/agent-execution flaw proven from a static read alone. → these manifest only at runtime; stand up the container, seed the state, run the concurrent/replay PoC before calling it proven.
-- Saying "no meaningful capability change" without having traced. → trace first, then judge.
-- Stopping at the first `HOLD` instead of collecting the evidence it names. → the `HOLD` is your next task, not the exit.
-- Reading "the gates let me stop" as "I should stop." → the gates cap over-claiming, not effort.
+- drafting before report-stage validation;
+- claiming impact not reproduced;
+- substituting copied code or a compatible client for the exact path;
+- changing a JSON conclusion instead of collecting evidence;
+- relabeling a terminal refutation;
+- rotating a target from memory or paraphrased policy;
+- treating a load-bearing caveat as a harmless footnote;
+- calling a target clean while queued high-value hypotheses remain.
 
-Concluding is a claim like any other: it needs the documented exhaustion, not "I did enough."
+Keep going when you notice:
 
-## Rationalizations to reject
-
-| Rationalization | Required response |
-|---|---|
-| “The primitive is obviously dangerous.” | Show the attacker capability delta and owned boundary. |
-| “The local PoC works.” | Prove the event/config/caller exists in the accepted threat model. |
-| “A compatible substitute client reproduced it.” | Treat that as primitive evidence only; run the exact pinned executable through the product-generated invocation. |
-| “I copied the vulnerable lines verbatim into the PoC.” | That proves language/library semantics, not the target path. Invoke the real method or entrypoint with its actual surrounding controls. |
-| “The product docs expose the same field.” | Docs anchor the surface, not byte-level reachability. Trace validation, storage, serialization, and runtime delivery of the exact representation. |
-| “The canary file was read, so cloud secrets and cross-tenant data are P1.” | Claim only the reproduced file-read effect. Stronger assets and severity require evidence that the managed boundary is reachable and target-owned sensitive data is exposed. |
-| “The path escapes the root, so this is arbitrary write and RCE.” | Path control is not a permission bypass. Prove the runtime principal can write the chosen target and that the written artifact reaches an execution trigger. |
-| “A later step invokes `sudo`, so the whole workflow is privileged.” | Privilege is operation-specific. Trace the exact privileged command, arguments, policy, and whether it applies to the claimed sink. |
-| “The same join appears in cleanup, so delete is attacker-controlled too.” | Re-trace that sibling's source. A similar sink with locally generated state does not inherit taint from a manifest or request. |
-| “Other products assigned a CVE to this class.” | Precedent shows plausibility, not this target's actor, trust contract, reachability, or impact. Clear those gates independently. |
-| “Public search is clean.” | Record private-duplicate risk and the semantic delta from nearby work. |
-| “Another frontier model confirmed it.” | Treat agreement as prioritization; require an independent artifact. |
-| “The novelty window may close.” | Scarcity never lowers proof, ownership, or routing gates. |
-| “I will draft now and validate later.” | Stop. Report-stage validation must pass before drafting. |
-| “I can edit the candidate until it passes.” | Add evidence, not assertions. Preserve earlier failed gates and decision history in the same artifact. |
-| “But a real integrator forwards untrusted input into this.” | Their missing validation is the bug; the owned boundary treats this input as trusted config. Terminal refutation → `KILL`. |
-| “I marked the refutation `refuted`, so it's cleared.” | Only non-terminal refutations clear. Intended-usage / owned-boundary / attacker-already-holds-precondition refutations are `KILL`, not `refuted`. |
-| “I checked `git log`, so it's novel.” | `git log` misses live PRs and closed by-design issues. Run the issue/PR search + current-branch check and paste the output, or the verdict caps at `HOLD @ novelty`. |
-| “A tool or another agent already marked it VALID.” | That is consensus, not evidence. The hypothesis owes the same trace, capability-delta, refutation, and novelty gates as any other. |
-| “I generated many hypotheses, so coverage is good.” | Volume is not depth. Rank by creativity signal, promote one, and complete its trace before spawning the next. |
-| “The fix commit exists, so this class is handled.” | A fix can be partial. Run the incomplete-fix variant-character check (`emerging-surfaces` §2B) and the sibling sweep against the *patched* path before calling it dead. |
-| “It’s a real defect; I’ll just note the caveat and submit.” | The caveat about your own impact **is the verdict**. Write the one-sentence attacker model; if it needs a hedge (no crossed boundary, precondition already grants it, default-config-only, non-security control), it is informative. Remove the hedge with evidence or `KILL`/`HOLD` (worked-examples: the caveat is the verdict). |
-| “Memory says this target is N/A for source / hardened / saturated, so skip it.” | A rotation is a terminal verdict owed live evidence. Open the target ledger, pull scope + quote the live policy, read the asset-level saturation — never abandon a target on a paraphrase. |
+- stopping because the work is unfamiliar or fiddly;
+- treating `HOLD` as an exit rather than the next evidence task;
+- concluding a runtime-only class from static reading;
+- trusting the target’s own tests as the only clean proof;
+- closing one candidate and forgetting the rest of the queue.
 
 ## References and tools
 
-| Resource | Load or run when |
+| Resource | Use when |
 |---|---|
-| `references/methodology-and-targeting.md` | Target/route selection, invariant modeling, contestability, proof standards, CVSS, report template |
-| `references/hypothesis-generation.md` | Large/unfamiliar target where the highest-value invariant is not obvious — attack modes, pre-mortem, TRIZ, adaptive-attacker ideation |
-| `references/adversarial-self-review.md` | The Advocate (8 FP patterns) / Cold-verifier / Causal-challenger rotation — run it yourself before proof to shape it (prep), and have an independent agent run it on the finished candidate after hardening (certification) |
-| `references/worked-examples.md` | Need a concrete pattern — four candidates walked to a terminal verdict (`KILL @ refutation`, `REPORTABLE`, `HOLD @ proof`, `ROUTE_ELSEWHERE @ route`) with decisive fields, plus real-informative calibration |
-| `references/bug-class-taxonomy.md` | After choosing an invariant, for relevant source/sink and confirmation patterns |
-| `references/grey-box-dynamic-testing.md` | Live instance, two-account identity diff, control tests, safe-harbor proof |
-| `references/emerging-surfaces-and-techniques.md` | The architecture exposes AI/MCP, CI/CD, supply-chain, cloud, auth, or parser boundaries |
-| `references/platform-operations.md` | Before testing/submitting: scope, platform, KYC, payout, safe-harbor |
-| `assets/target.template.json` | Before investing in a target — the entry/exit ledger (live scope, verbatim policy quote, asset-level saturation, `SELECTED`/`ROTATED` disposition) |
-| `assets/candidate.template.json` | Start every candidate and persist cross-session decisions |
-| `scripts/validate-candidate.py` | Enforce target-ledger, model, terminal-decision, and report readiness (`--stage target/model/decision/report`) |
-| `scripts/recon-sweep.sh` | Secondary, model-gated coverage and variant discovery |
+| `references/methodology-and-targeting.md` | Targeting, proof standards, routing, severity, and report structure |
+| `references/hypothesis-generation.md` | Architecture-specific hypothesis generation and ranking |
+| `references/adversarial-self-review.md` | Preparation and final independent-review procedure |
+| `references/worked-examples.md` | Gate-calibrated examples, including load-bearing versus ordinary caveats |
+| `references/bug-class-taxonomy.md` | Relevant class-specific source/sink and confirmation patterns |
+| `references/grey-box-dynamic-testing.md` | Authorized live/owned-account testing |
+| `references/emerging-surfaces-and-techniques.md` | AI/MCP, CI/CD, supply-chain, cloud, auth, parser, variant, and history surfaces |
+| `references/platform-operations.md` | Scope, safe harbor, proof policy, KYC, payout, and platform operations |
+| `assets/target.template.json` | Gate-aware target selection/rotation ledger |
+| `assets/candidate.template.json` | One invariant’s durable evidence and decision state |
+| `scripts/validate_hunt.py` | Authoritative target-bound validator |
+| `scripts/start_candidate.py` | Generate a candidate from a selected target ledger |
+| `scripts/validate-candidate.py` | Candidate-core validator used by `validate_hunt.py` |
+| `scripts/recon-sweep.sh` | Secondary model-gated sink and variant triage |
 
-Stay within program scope and safe harbor. Use owned accounts/data, local clones, and the least harmful proof that establishes the boundary. Never use exposed credentials or pivot into third-party systems.
+Stay within current scope and safe harbor. Use owned accounts and data, minimize impact, and never use exposed credentials or pivot into third-party systems.
