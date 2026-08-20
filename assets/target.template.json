@@ -1,0 +1,27 @@
+{
+  "program": "",
+  "asset": "",
+  "repository": "",
+  "commit": "",
+  "operating_mode": "SOURCE_ONLY",
+  "scope": {
+    "asset_identifier": "",
+    "eligible_for_bounty": null,
+    "max_severity": "",
+    "checked_at": "",
+    "source": "GetProgramScopeDetail"
+  },
+  "poc_policy": {
+    "quote": "",
+    "accepts_source_poc": null,
+    "checked_at": ""
+  },
+  "saturation": {
+    "asset_resolved_count": null,
+    "discloses_reports": null,
+    "checked_at": "",
+    "rationale": ""
+  },
+  "disposition": "SELECTED",
+  "rotation_reason": ""
+}
