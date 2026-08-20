@@ -1,177 +1,187 @@
-# Adversarial Review — independent-first
+# Adversarial Review — preparation and final certification
 
-## Contents
-- Role 1 — Advocate (five protection layers, the eight false-positive patterns)
-- Role 2 — Cold verifier (zero-context re-derivation, five rejected rationalizations)
-- Role 3 — Causal challenger (intervention / counterfactual / confounder, fragility)
-- Symmetry: doubt must be evidenced too
-- Output contract
+## Purpose
 
-The strongest refutation (SKILL step 6, methodology §5.2) tests *the* best benign explanation.
-This file is the complementary *process* control: a structured self-challenge run by rotating
-three roles in sequence and **writing each role's output to the candidate before reading the
-next**. The point is separation — the mind that imagined the attack is not, in the same pass, the
-mind that validates it. That is what removes confirmation bias; the discipline is the ordering,
-not any tooling.
+The strongest-refutation gate tests the single best benign explanation. This review is a broader process control against confirmation bias, unsupported mitigations, and weak proof.
 
-**The review must be independent — self-review does not certify a final verdict.** A single
-context cannot shed its own anchoring, and measured on real hunts even a genuine self red-team
-over-rated its own reachability. This splits into two distinct passes:
+It runs twice:
 
-- **Preparation (run it yourself, before proof).** Run the three roles below against your own
-  finding to decide what proof would convince a skeptic and to fill the `advocate`/`cold_verify`/
-  `causal` blocks. This strengthens the candidate; it does **not** certify it. Do not set
-  `adversarial_review.reviewer` to a self identifier — a self-graded rotation is preparation only.
-- **Certification (independent, on the finished candidate).** After proof *and* the hardening
-  pass, **spawn a fresh-context agent** — a separate agent, session, or model handed only the
-  repository and the *finished* candidate artifact, with none of your prosecution narrative — let
-  it run the three roles, and record *its* identifier in `adversarial_review.reviewer`. Certify
-  last, on what will actually be submitted: a reviewer that ran before the proof and hardening
-  never saw the final claim (which the hardening pass may have widened or re-scored). If your
-  harness cannot spawn one, set `reviewer: "owed"`, **signal the user that an independent review is
-  owed**, and treat the verdict as provisional (the validator prints `PROVISIONAL`, not `READY`).
+1. **Preparation** — the author runs the roles before proof to discover what evidence a skeptic would require. This pass may shape or kill the candidate, but it never certifies a final verdict.
+2. **Certification** — a fresh-context agent or human reviews the finished candidate after proof, novelty, and timestamped hardening. This pass rewrites the review fields and records the reviewer attestation; `reviewed_at` must be at or after `hardening.completed_at` and before `decision.decided_at`.
 
-The validator rejects `reviewer: "self"` on `REPORTABLE` and `NO_REPORTABLE_FINDING`. The pass can
-only lower confidence or set `KILL`; it never clears the `refutation` or `novelty` gates. On a
-`NO_REPORTABLE_FINDING` the review audits the *clean conclusion*: its `cold_verify.verdict` is
-`DISPROVED` or `UNCERTAIN`, never `CONFIRMED` (a confirmed finding is not a clean verdict). Record
-the result in `candidate.json.adversarial_review`.
+A reviewer must receive the repository and final candidate artifact, not the author’s prosecution narrative.
 
-## Role 1 — Advocate (build the strongest defense)
+## Reviewer attestation
 
-Construct the strongest possible case that this is **not** a vulnerability, even for a finding
-that looks obviously valid. Inability to build a credible defense is itself the strongest evidence
-the bug is real. "The framework probably handles this" is not a defense — name the specific
-middleware, function, and configuration, or it does not count. Do not invent protections that are
-not in the code.
-
-Search five protection layers and, for each, state whether it **blocks the specific attack path**
-(not merely "reduces risk"): Language · Framework · Middleware · Application · Documentation/
-deployment.
-
-Then check the eight false-positive patterns explicitly. Any match downgrades or kills the
-finding; each maps onto an existing gate or terminal refutation kind.
-
-1. **Unsafe-looking code without path tracing** — is attacker input *confirmed* to reach it, or
-   assumed? (unconfirmed → `reachability`)
-2. **Phantom validation bypass** — is the "missing" validation actually in a helper, middleware,
-   or parent caller you did not read?
-3. **Framework-protection blindness** — ORM parameterization, template auto-escaping, CSRF
-   middleware, etc. already neutralize it?
-4. **Same-origin confusion** — is this actually cross-trust-boundary, or same-origin/same-session
-   dressed up as cross-boundary? (→ `owned_boundary_absent`)
-5. **Dependency CVE without reachability** — is the vulnerable function called with attacker input
-   on a runtime path that ships? (→ `reachability`)
-6. **Config-as-vulnerability / operator input mis-cast as attacker input** — does exploitation
-   require admin to set an insecure config, or a non-default config no real deployment uses? And is
-   the tainted value operator/deployer-controlled configuration (a `base_url`, a model selector, a
-   default service binding) rather than attacker-reachable input? Operator config is not an attack
-   vector — this is the single most common informative in the mined history. (→
-   `required_precondition_already_grants_effect`, `behavior_is_documented_contract`, or
-   `capability_already_possessed`; a default-config-only exposure with no real-deployment impact is
-   at best `HOLD @ proof`)
-7. **Test/example code** — does the vulnerable code ship to production, or is it a fixture/doc/
-   dev script?
-8. **Double-counting** — is this the same root cause as another finding under a different surface?
-
-Record which layers were searched, the strongest defense you could build, and any FP-pattern
-hits, in `adversarial_review.advocate`. An unrebutted FP-pattern hit forbids `REPORTABLE` — write
-the rebuttal (with evidence) or take the implied `KILL`. These are the eight patterns assessed
-against the **single candidate under review**, so `fp_pattern_hits` holds at most a handful of
-entries — one per pattern that actually matches, never one per grep line. If a recon sweep
-returned dozens of syntactic hits, that is a discovery list, not a finding: they belong in the
-variant sweep, not here, and are rebutted by structural class, not line by line.
-
-## Role 2 — Cold verifier (zero-context re-derivation)
-
-Re-verify as if you had never seen your own analysis:
-
-- Do **not** re-read your own trace or notes; trace from source yourself.
-- Restate the claim and decompose into testable sub-claims: A (attacker controls X),
-  B (X reaches Y unsanitized), C (Y causes effect Z). If any sub-claim is incoherent or
-  unsupported when stated precisely → `DISPROVED`. (Half of false positives die here.)
-- Write a prosecution brief and a defense brief independently — neither may cite the other.
-- Re-derive severity from scratch, **starting at MEDIUM**, ignoring whatever the draft says
-  (methodology §6.2 governs the final score).
-- `UNCERTAIN` is a first-class, honest outcome; an honest `UNCERTAIN` beats a dishonest
-  `CONFIRMED` and maps to `HOLD`.
-- Staleness check: if any code citation no longer resolves on the current default branch, the
-  finding is `DISPROVED` until re-anchored — this is the same signal as
-  `novelty.current_upstream_state: fixed`.
-
-Five rationalizations that are auto-`DISPROVED` signals:
-
-1. "The first pass already verified this."
-2. "I can't reproduce it, but the code looks vulnerable." (failed repro without a documented
-   blocker is a disproof signal, not a hold)
-3. "Probably exploitable in some configuration." (theoretical ≠ confirmed)
-4. "The severity feels right for this bug class." (severity is from evidence, not class default)
-5. "The defense brief is weaker than the prosecution." (a plausible defense demands reproduction
-   before you confirm)
-
-Record `adversarial_review.cold_verify = {verdict, rederived_severity, killed_subclaim, subclaims}`,
-where `subclaims[]` persists the A/B/C decomposition, each `{claim, status: supported|unsupported}`.
-A `DISPROVED` verdict forbids `REPORTABLE`; so does a `CONFIRMED` verdict with fewer than two
-sub-claims or any `unsupported` link — the finding fails at that link. Writing the decomposition
-*before* the verdict is the point: a bare `CONFIRMED` is a self-graded checkbox, and a self-grader
-is least reliable exactly when its own trace is subtly wrong. The explicit decomposition is what
-makes the verdict cost something; an independent verifier or the deterministic validator — neither
-of which shares your trace — removes that bias rather than merely reducing it, which is why the
-gates are cleared by artifacts and the validator, never by the self-verdict alone.
-
-## Role 3 — Causal challenger (test every protection you rely on)
-
-For each protection you claim blocks the attack, run three checks before trusting it:
-
-- **Intervention** — if I forcibly removed this protection, does input still reach the sink? If
-  yes, the protection is not causally necessary and something else is really deciding the outcome.
-- **Counterfactual** — does normal traffic ever trigger this protection? If no, it is dormant and
-  never battle-tested — treat as fragile.
-- **Confounder** — is the protection in the reviewed code, or upstream (WAF/proxy/gateway)? If
-  upstream, are there paths that skip the upstream — direct IP, internal service-to-service, a
-  background worker, a non-default deployment?
-
-Score each surviving protection **Fragile / Moderate / Robust**. A finding blocked only by a
-Fragile protection is worth re-investigating from a different entrypoint rather than killing.
-
-Record `adversarial_review.causal[]` with one entry per protection.
-
-## Symmetry: doubt must be evidenced too
-
-This review exists to kill false positives, but it must not become a false-*negative* engine. A
-risk-averse pass will reach for an imagined mitigation — "there is probably a WAF", "some
-middleware likely re-checks this", "production surely disables the debug route" — and downgrade a
-real finding to `UNCERTAIN` on speculation. That is the mirror image of the inflation the main
-workflow already forbids (SKILL step 6 rejects unevidenced *preconditions* that help the
-attacker), and it is equally banned here: an unevidenced *mitigation* that kills the finding is
-just as invalid.
-
-Rule: **every downgrade, `UNCERTAIN`, or `DISPROVED` must cite code-grounded evidence for the
-doubt** — a specific file:line control, a documented deployment default, a real config — not an
-invented or theoretical protection. If the only reason a finding is not `CONFIRMED` is a mitigation
-you cannot point to in the codebase, config, or program policy, that is not doubt; the honest
-verdict is `CONFIRMED` and the speculation belongs in `## Limitations`, not in the verdict. A real
-upstream protection (WAF/proxy) does not settle it either way until the confounder check finds it
-in evidence *and* fails to find a path that skips it.
-
-## Output contract
+Use the structured object in `candidate.json`:
 
 ```jsonc
-"adversarial_review": {
-  "advocate":   { "layers_checked": [...],
-                  "fp_pattern_hits": [{ "pattern": "", "rebuttal": "", "evidence": "" }],
-                  "strongest_defense": "", "blocks": false },
-  "cold_verify":{ "verdict": "CONFIRMED|DISPROVED|UNCERTAIN", "rederived_severity": "",
-                  "killed_subclaim": null,
-                  "subclaims": [{ "claim": "attacker controls X", "status": "supported|unsupported" }] },
-  "causal":     [{ "protection": "", "intervention": "", "counterfactual": "", "confounder": "",
-                   "fragility": "fragile|moderate|robust" }]
+"reviewer": {
+  "mode": "independent_agent|human|self|owed",
+  "id": "review-session-or-human-id",
+  "reviewed_at": "2026-08-20T04:00:00Z",
+  "artifact": "reviews/H-001.json",
+  "fresh_context": true
 }
 ```
 
-At `REPORTABLE`, the report-stage validator requires this block to show the pass actually ran, not
-just that it is present: `advocate` with a non-empty `layers_checked` and `strongest_defense` and
-`blocks: false`; `cold_verify.verdict == "CONFIRMED"` with a non-empty `rederived_severity`, a
-null `killed_subclaim`, and a `subclaims[]` decomposition (≥2 links, each `supported`); and every
-`advocate.fp_pattern_hits[]` entry carrying both a non-empty `rebuttal` and an `evidence` locator (a
-file:line control, artifact, or policy citation).
+Rules:
+
+- `self` is preparation only and never final certification.
+- `independent_agent` requires `fresh_context: true`.
+- `human` is valid final certification.
+- `owed` means provisional. It may support decision-stage output but never final report readiness.
+
+## Role 1 — Advocate
+
+Build the strongest evidence-backed case that the candidate is not a vulnerability.
+
+Check five protection layers:
+
+```text
+language
+framework
+middleware
+application
+policy/deployment
+```
+
+For each, state whether it blocks the exact path rather than merely reducing risk.
+
+Check these false-positive patterns:
+
+1. Unsafe-looking code without attacker-source tracing.
+2. Validation or authorization hidden in a helper, parent caller, or router composition.
+3. Framework protection already neutralizes the primitive.
+4. Same-realm behavior presented as a crossed trust boundary.
+5. Dependency advisory without shipped-path reachability.
+6. Operator/deployer configuration presented as attacker input.
+7. Test, example, migration, or development-only code presented as production behavior.
+8. The same root cause counted again through another surface.
+
+Every recorded pattern needs both:
+
+```json
+{
+  "pattern": "framework-protection blindness",
+  "rebuttal": "The raw query API bypasses ORM parameterization.",
+  "evidence": "app/reports.rb:42 and artifacts/poc.txt"
+}
+```
+
+An unrebutted pattern blocks `REPORTABLE`.
+
+## Role 2 — Cold verifier
+
+Re-derive the claim from source and evidence rather than validating the author’s prose.
+
+Decompose it into load-bearing subclaims, for example:
+
+```text
+A. the attacker controls X
+B. X reaches Y in the load-bearing representation
+C. no authoritative control blocks Y
+D. Y causes effect Z
+E. Z is a new capability across a target-owned boundary
+```
+
+Persist each link:
+
+```json
+{
+  "claim": "tenant A controls the report id",
+  "status": "supported",
+  "evidence": "routes.rb:14"
+}
+```
+
+`REPORTABLE` requires every load-bearing link to be supported. One unsupported link means `DISPROVED` or `UNCERTAIN`, never `CONFIRMED`.
+
+Reassess severity from the demonstrated effect. Starting at MEDIUM is a useful anti-inflation discipline, not a forced final score.
+
+Reject these rationalizations:
+
+- “The author already verified it.”
+- “The code looks vulnerable even though the exact path did not reproduce.”
+- “It probably works in some deployment.”
+- “This class is usually High/Critical.”
+- “The defense is weaker than the prosecution.”
+
+## Role 3 — Causal challenger
+
+For every claimed protection or blocker, test:
+
+- **Intervention:** removing it changes the result?
+- **Counterfactual:** normal traffic exercises it?
+- **Confounder:** it lives in the reviewed target rather than an assumed WAF, proxy, gateway, or deployment?
+
+Classify surviving protections as `fragile`, `moderate`, or `robust` with evidence.
+
+A speculative mitigation cannot kill a candidate. Doubt must be grounded just as attacker preconditions must be grounded.
+
+## A load-bearing caveat determines the gate
+
+Review the candidate’s own limitations. A caveat is load-bearing when it negates one of:
+
+- attacker-controlled source;
+- crossed trust boundary;
+- new capability;
+- target-owned security property;
+- accepted proof or deployment route;
+- security-enforcing nature of the bypassed control.
+
+That caveat determines `HOLD` or `KILL` until evidence removes it. Ordinary limitations remain in the report and constrain impact or severity.
+
+Do not reward deletion of honest caveats. Reward correctly classifying them.
+
+## Final report certification
+
+A final report review must cover the finished candidate, including:
+
+- exact proof and negative controls;
+- production or destination relevance;
+- route ownership and accepted proof type;
+- novelty searches and current-branch state;
+- collision differentiator where required;
+- hardening results and final severity.
+
+The validator requires a final reviewer attestation plus the populated Advocate and Cold-verifier fields.
+
+## Final candidate-closure certification
+
+A candidate-level `NO_REPORTABLE_FINDING` is not merely the inverse of a report. The reviewer must audit whether this hypothesis was closed too early without pretending that one closure exhausts the target.
+
+Populate `closure_review`:
+
+```jsonc
+"closure_review": {
+  "verdict": "DEPTH_SUFFICIENT",
+  "closures_challenged": [
+    {
+      "hypothesis": "H-001",
+      "closure": "KILL @ reachability",
+      "challenge": "Re-derived every public ingress and checked the alternate worker path.",
+      "evidence": "reviews/H-001.json#reachability"
+    }
+  ],
+  "probe_assessment": {
+    "sufficient": true,
+    "waived": false,
+    "waiver_reason": "",
+    "evidence": "artifacts/probe.txt"
+  },
+  "coverage_gaps": ["WebSocket transport remains untraced"],
+  "remaining_high_value_hypotheses": ["H-002: async worker loses tenant identity"]
+}
+```
+
+A final candidate-level `NO_REPORTABLE_FINDING` requires:
+
+- `DEPTH_SUFFICIENT`;
+- at least one load-bearing closure challenged with evidence;
+- a sufficient researcher-designed adversarial probe, or a narrowly evidenced waiver;
+- explicit coverage-gap and remaining-hypothesis arrays.
+
+Nonempty arrays do not invalidate this candidate closure. They are mandatory continuation signals for the campaign. The reviewer must never turn them into empty arrays merely to make the current artifact look final.
+
+An `UNCERTAIN` closure review is `HOLD`, not a final clean verdict.
