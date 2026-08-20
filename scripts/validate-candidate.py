@@ -28,6 +28,7 @@ GATES = {
     "reportability",
 }
 OPERATING_MODES = {"SOURCE_ONLY", "PROGRAM_HOSTED"}
+TARGET_DISPOSITIONS = {"SELECTED", "ROTATED"}
 REFUTATION_RESULTS = {"refuted", "confirmed", "unresolved"}
 SUPPORTED_SCHEMA_VERSIONS = {3, 4, 5}
 # Schema 5 process-evidence blocks (ideation + adversarial self-review). The
@@ -1276,6 +1277,89 @@ def validate_report(document, errors):
         )
 
 
+def validate_target(document, errors):
+    """Validate the lightweight target ledger (--stage target): the pre-candidate entry/exit
+    decision. Which target to hunt, and whether to walk away, are decided here on LIVE evidence,
+    not memory -- the two places hunts leaked before a candidate ever existed (a viable target
+    wrongly skipped as source-only-N/A on a paraphrased policy the live text contradicted; deep
+    findings filed on saturated assets). This is deliberately light so it is created FIRST, for
+    every target selected OR rejected -- the upfront checkpoint the heavy candidate.json is not."""
+    require_texts(document, ("program", "asset", "repository", "commit"), errors)
+    if value_at(document, "operating_mode") not in OPERATING_MODES:
+        errors.append("target.operating_mode must be one of " + ", ".join(sorted(OPERATING_MODES)))
+
+    scope = value_at(document, "scope")
+    if not isinstance(scope, dict):
+        errors.append(
+            "target requires a scope block from a LIVE GetProgramScopeDetail pull "
+            "(asset_identifier, eligible_for_bounty, checked_at) -- eligibility is live state, never memory"
+        )
+    else:
+        if not isinstance(scope.get("eligible_for_bounty"), bool):
+            errors.append(
+                "scope.eligible_for_bounty must be a boolean read from a live scope pull (is the exact "
+                "asset bounty-eligible?), not assumed from memory or from a repository being public"
+            )
+        for key in ("asset_identifier", "checked_at"):
+            value = scope.get(key)
+            if not isinstance(value, str) or not value.strip():
+                errors.append(f"scope.{key} must be a non-empty string")
+
+    poc = value_at(document, "poc_policy")
+    if not isinstance(poc, dict):
+        errors.append(
+            "target requires a poc_policy block with a VERBATIM quote of the live policy on PoC "
+            "acceptance -- you may not decide source-viability (either direction) on a paraphrase"
+        )
+    else:
+        quote = poc.get("quote")
+        if not isinstance(quote, str) or not quote.strip():
+            errors.append(
+                "poc_policy.quote must be a verbatim line from the live program policy on what proof is "
+                "accepted (source-only? running instance? auto-N/A?) -- never a paraphrase. A target "
+                "skipped as 'source-only is N/A' owes the quoted line that says so; matomo was wrongly "
+                "killed on a paraphrase the live policy contradicted"
+            )
+        if not isinstance(poc.get("accepts_source_poc"), bool):
+            errors.append(
+                "poc_policy.accepts_source_poc must be a boolean derived from the quoted policy line"
+            )
+        checked_at = poc.get("checked_at")
+        if not isinstance(checked_at, str) or not checked_at.strip():
+            errors.append("poc_policy.checked_at must record when the live policy was read")
+
+    sat = value_at(document, "saturation")
+    if not isinstance(sat, dict):
+        errors.append(
+            "target requires a saturation block (asset_resolved_count, discloses_reports, rationale) -- "
+            "assess the ASSET's own dedup pressure, not the program's, before investing"
+        )
+    else:
+        if not isinstance(sat.get("discloses_reports"), bool):
+            errors.append(
+                "saturation.discloses_reports must be a boolean (can you dedup against the program's "
+                "public reports?)"
+            )
+        rationale = sat.get("rationale")
+        if not isinstance(rationale, str) or not rationale.strip():
+            errors.append(
+                "saturation.rationale must state why this asset's dedup pressure is acceptable "
+                "(asset-level resolved count, not program-wide) -- selection is where duplicates are decided"
+            )
+
+    disposition = value_at(document, "disposition")
+    if disposition not in TARGET_DISPOSITIONS:
+        errors.append("target.disposition must be SELECTED or ROTATED")
+    elif disposition == "ROTATED":
+        reason = value_at(document, "rotation_reason")
+        if not isinstance(reason, str) or not reason.strip():
+            errors.append(
+                "a ROTATED target requires rotation_reason -- rotation is a terminal verdict owed the same "
+                "live evidence as a KILL (a quoted policy line, a live saturation number, or "
+                "eligible_for_bounty:false), never a memory-based 'this looks dead/hardened' skip"
+            )
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Validate a bug-bounty candidate before recon or report writing."
@@ -1283,7 +1367,7 @@ def parse_args():
     parser.add_argument("candidate", type=Path, help="Path to candidate JSON")
     parser.add_argument(
         "--stage",
-        choices=("model", "decision", "report"),
+        choices=("target", "model", "decision", "report"),
         required=True,
         help="Validation strictness",
     )
@@ -1309,7 +1393,9 @@ def main():
         return 2
 
     errors = []
-    if args.stage == "model":
+    if args.stage == "target":
+        validate_target(document, errors)
+    elif args.stage == "model":
         validate_model(document, errors)
     elif args.stage == "decision":
         validate_decision(document, errors)
@@ -1325,6 +1411,7 @@ def main():
         print(f"WARN: {warning}", file=sys.stderr)
 
     labels = {
+        "target": "TARGET READY",
         "model": "MODEL READY",
         "decision": "DECISION READY",
         "report": "REPORT READY",

@@ -5,7 +5,7 @@
 - Example 2 — a clean REPORTABLE: cross-tenant read (`REPORTABLE @ reportability`)
 - Example 3 — HOLD: proof stuck at primitive fidelity (`HOLD @ proof`)
 - Example 4 — ROUTE_ELSEWHERE: the fix belongs upstream (`ROUTE_ELSEWHERE @ route`)
-- Calibration from real informatives (what a weak finding looks like)
+- Calibration from real informatives — the caveat is the verdict
 
 Four candidates walked to a terminal verdict, showing the decisive `candidate.json` fields
 (not the whole file — see `assets/candidate.template.json` for the full shape). Copy the
@@ -203,30 +203,37 @@ lands at `ownership|route`. Here another project owns and can fix it, so route i
 Filing this against `acme-app`'s program because it has a payout is venue-shopping; the fix — and
 the valid disclosure — belongs where the code lives.
 
-## Calibration from real informatives (what a weak finding looks like)
+## Calibration from real informatives — the caveat is the verdict
 
-These are condensed from reports actually closed **Informative** — valid code defects that failed
-the capability-delta or demonstrated-impact bar. Each is the trap the examples above are meant to
-stop; the pattern, not the specifics, is the lesson.
+Every finding below was a **real code defect, competently proven** — and closed **Informative**.
+In each, the hunter *wrote the disqualifying sentence into its own report*, then submitted as if
+that sentence were a footnote. It is not a footnote; **it is the verdict. A hedge you write about
+your own impact is a kill-condition, not a disclosure.** If a draft contains "does not prove
+production exposure", "does not bypass authentication", "requires control of env/config", "no
+production path is required for the demonstrated case", or "may be treated as non-core/beta", that
+clause forbids `REPORTABLE` until it is removed by *evidence*, not by argument. This is the mirror
+of the "doubt must be evidenced" rule (`adversarial-self-review.md`), pointed at self-hedges about
+*impact* instead of *mitigations* — and it is a **reading discipline**, not a field: no validator
+can smell an informative, so you must catch your own hedge.
 
-- **Operator config mis-cast as attacker input → `KILL @ capability_delta`.** A transport guard
-  bypassable only by an attacker who *controls the `base_url`* — but whoever sets `base_url` already
-  has that capability. Same shape: a path traversal reachable only by an *authenticated model
-  selector* (operator config). Ask FP-pattern 6: is the tainted value operator/deployer config? Then
-  it is not an attack, however real the code defect.
-- **Default-config-only exposure → `HOLD @ proof`, not REPORTABLE.** A service that exposes internal
-  endpoints in its *default/dev template* while production enforces auth. The "prod enforces it"
-  rebuttal lands; without a real managed-deployment reproduction the demonstrated impact is missing.
-- **Owned-boundary defect with no shipped sink → `KILL @ reachability`.** A real key-handling defect
-  where the only caller reaching the keys is *same-realm* and already holds them — no cross-realm
-  sink ships. The defect is real; the reachability is not.
+**The one-sentence test.** Before `REPORTABLE`, write exactly: *"The attacker, who already holds
+X, crosses boundary Y to gain capability Z they could not do before."* If you cannot write it
+without a hedge, the verdict is `KILL`/`HOLD`. Four kill-questions, each anchored to a finding that
+was really submitted and really closed informative:
+
+| Kill-question | Real informative | The self-caveat it *contained* (verbatim) | Lands at |
+|---|---|---|---|
+| **Boundary** — do attacker and victim differ, or is it the same realm/principal? | `@exodus/keychain` key-leak (#3948361) | *"No production IPC path is required for this demonstrated capability change"* — the recovering caller is the **same principal** already holding the signer; the cross-realm sink is asserted, never shown | `KILL @ reachability` |
+| **Precondition** — does what the attacker must already hold already grant the effect? | anthropic `_require_https` cleartext-token (#3858135) | *"Gated behind attacker influence over `base_url` via env/config"* — writing the victim's env is already ≥ the stolen token; also flagged *"may be treated as non-core"* (beta) | `KILL @ capability_delta` |
+| **Deployment** — an insecure default a real deployment overrides, undemonstrated live? | lightspark QueryNodes default-config (#3852098) | *"this draft does not prove live production deployment exposure … Do not submit as High"* — manifests only under a shipped default (`service_authz: disabled`) real deployments override with VPC/allowlist | `HOLD @ proof` (config-dependency) |
+| **Control class** — is the bypassed thing an authz boundary, or defense-in-depth/UX? | crypto.com MCP safety-tier (#3857707) | *"It does not bypass API-key authentication"* — the "control" is an agent acknowledgement prompt; the credential-holder could already make the call | `KILL @ capability_delta` |
 
 The unifying test: a real defect is not a finding until it grants a **new** capability to an
-**attacker-reachable** actor in a **real** deployment. Absent that it is `HOLD`/`KILL`, never a
-submission — even when the code is genuinely wrong. (Every one of these was flagged by the hunter's
-own pre-submit analysis and submitted anyway; the gate must bind, not be talked past.)
+**attacker-reachable** actor across a **crossed boundary** in a **real** deployment. Absent that it
+is `HOLD`/`KILL`, never a submission — even when the code is genuinely wrong.
 
-The default-config and operator-config cases now map to a checkable field: `proof.config_dependency`
-— `default_only` (the effect appears only in a default/dev config a real deployment overrides) and
-`requires_insecure_config` (needs an insecure config no real deployment uses) both forbid REPORTABLE;
-a lab-reproduced source-only finding is `none` and unaffected.
+The `default_only` / `requires_insecure_config` cases also map to the checkable field
+`proof.config_dependency` (both forbid `REPORTABLE`; a lab-reproduced source-only finding is `none`).
+The boundary and precondition cases are `reachability` / `capability_delta` judgments the validator
+cannot make for you — which is exactly why the hedge-is-the-verdict rule is a discipline you run by
+hand, on your own draft, before `--stage report`.

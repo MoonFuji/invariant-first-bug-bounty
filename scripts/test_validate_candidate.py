@@ -908,6 +908,91 @@ def case_AF_reject():
     return doc, "decision", 2
 
 
+# --- Target ledger (--stage target): pre-candidate entry/exit governance (v0.6.0) ---
+
+def target_baseline():
+    """A valid SELECTED target ledger: the golden target-stage ACCEPT."""
+    return {
+        "program": "elastic",
+        "asset": "Fleet Server",
+        "repository": "github.com/elastic/fleet-server",
+        "commit": "8f9e6bb",
+        "operating_mode": "SOURCE_ONLY",
+        "scope": {
+            "asset_identifier": "Fleet Server",
+            "eligible_for_bounty": True,
+            "max_severity": "critical",
+            "checked_at": "2026-08-19",
+            "source": "GetProgramScopeDetail",
+        },
+        "poc_policy": {
+            "quote": "Our code is open so use that to your advantage!",
+            "accepts_source_poc": True,
+            "checked_at": "2026-08-19",
+        },
+        "saturation": {
+            "asset_resolved_count": 6,
+            "discloses_reports": True,
+            "checked_at": "2026-08-19",
+            "rationale": "asset-level 6 resolved all-time vs program-wide 2382/90d; least-saturated eligible asset",
+        },
+        "disposition": "SELECTED",
+        "rotation_reason": "",
+    }
+
+
+def case_TA_accept():
+    # complete SELECTED ledger -> accept
+    return target_baseline(), "target", 0
+
+
+def case_TB_reject():
+    # no verbatim policy quote -> reject (cannot decide source-viability on a paraphrase)
+    doc = target_baseline()
+    doc["poc_policy"]["quote"] = ""
+    return doc, "target", 2
+
+
+def case_TC_reject():
+    # eligibility asserted from memory, not a live bool -> reject
+    doc = target_baseline()
+    doc["scope"]["eligible_for_bounty"] = None
+    return doc, "target", 2
+
+
+def case_TD_reject():
+    # ROTATED with no rotation_reason -> reject (rotation is a terminal verdict owed evidence)
+    doc = target_baseline()
+    doc["disposition"] = "ROTATED"
+    doc["rotation_reason"] = ""
+    return doc, "target", 2
+
+
+def case_TE_accept():
+    # ROTATED with a live-evidenced reason + a quoted auto-N/A policy line -> accept (the matomo fix,
+    # done right: the rotation cites the quoted live policy line, not a memory paraphrase)
+    doc = target_baseline()
+    doc["poc_policy"]["quote"] = "Reports based solely on source code analysis without a running-instance PoC are not accepted."
+    doc["poc_policy"]["accepts_source_poc"] = False
+    doc["disposition"] = "ROTATED"
+    doc["rotation_reason"] = "policy quote establishes source-only is auto-N/A; no local-instance PoC path in budget"
+    return doc, "target", 0
+
+
+def case_TF_reject():
+    # no asset-level saturation rationale -> reject (selection is where dupes are decided)
+    doc = target_baseline()
+    doc["saturation"]["discloses_reports"] = None
+    return doc, "target", 2
+
+
+def case_TG_reject():
+    # bad disposition -> reject
+    doc = target_baseline()
+    doc["disposition"] = "MAYBE"
+    return doc, "target", 2
+
+
 CASES = [
     ("2  resolution attacks same boundary -> ACCEPT", case_2_accept, None),
     ("K  schema-5 process gates satisfied -> ACCEPT", case_K_accept, None),
@@ -947,6 +1032,13 @@ CASES = [
     ("AD NO_REPORTABLE_FINDING self-certified -> REJECT", case_AD_reject, "may not be self-certified"),
     ("AE NO_REPORTABLE_FINDING review owed -> ACCEPT (provisional)", case_AE_accept, None),
     ("AF NO_REPORTABLE_FINDING + CONFIRMED cold_verify -> REJECT", case_AF_reject, "contradicts adversarial_review"),
+    ("TA target ledger SELECTED complete -> ACCEPT", case_TA_accept, None),
+    ("TB target no verbatim policy quote -> REJECT", case_TB_reject, "poc_policy.quote"),
+    ("TC target eligibility not a live bool -> REJECT", case_TC_reject, "eligible_for_bounty"),
+    ("TD target ROTATED, no reason -> REJECT", case_TD_reject, "rotation_reason"),
+    ("TE target ROTATED w/ quoted-policy evidence -> ACCEPT", case_TE_accept, None),
+    ("TF target no saturation dedup assessment -> REJECT", case_TF_reject, "discloses_reports"),
+    ("TG target bad disposition -> REJECT", case_TG_reject, "disposition must be"),
     ("5  commits+issues+PRs evidenced -> ACCEPT", case_5_accept, None),
     ("5b upstream channels explicit -> ACCEPT", case_5b_accept, None),
     ("7b by-design -> KILL@refutation -> ACCEPT", case_7b_accept, None),

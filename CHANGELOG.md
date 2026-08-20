@@ -1,5 +1,51 @@
 # Changelog
 
+## v0.6.0 — govern the pre-candidate layer: the caveat is the verdict + the target ledger
+
+Driven by reading a full real hunting session (9 hunts, Aug-17→20) and the user's duplicate-origin
+audit of 24 HackerOne dupes — not reviewer theory. Two findings reshaped the skill:
+
+1. **The dupes split ~evenly.** 37% (9/24) were collisions with an original that was *itself*
+   `informative`/`not-applicable` — the class was pre-rejected; these were never payout-worthy. 42%
+   were genuine near-misses (original `resolved`/`triaged`). So "dup driver = saturation" was half
+   wrong: half the losses were **finding-quality**, not selection.
+2. **Reading the six directly-informative reports** (exodus keychain #3948361, anthropic
+   `_require_https` #3858135 and Vertex #3925350, lightspark QueryNodes #3852098, crypto.com
+   safety-tier #3857707, rails `allowed_uri` #3857547) showed one thread: each was a real, competently
+   proven code defect that **stated its own disqualifier in its own words** — *"does not bypass
+   authentication," "does not prove production exposure," "no production IPC path is required for the
+   demonstrated case,"* — and was submitted anyway.
+
+### The caveat is the verdict (judgment, not tooling)
+No validator can smell an informative — this is a reading discipline. `references/worked-examples.md`
+now teaches it concretely: the meta-rule (**a hedge you write about your own impact is a
+kill-condition, not a disclosure**), a one-sentence attacker-model test (*"the attacker, who already
+holds X, crosses boundary Y to gain capability Z"*), and four kill-questions each anchored to a real
+informative with its verbatim self-caveat and the gate it should have died at (boundary / precondition
+/ deployment / control-class). SKILL step 6 carries the rule; new STOP flag and two rationalization
+rows enforce it in the moment. Deliberately **no** substate-lookup gate — the user's point stands
+that tooling cannot make a finding informative-aware.
+
+### Target ledger (`--stage target`) — govern entry and exit
+Both persistent losses (a viable target skipped as "source-only is N/A" on a *paraphrased* policy the
+live text contradicted — matomo; deep findings filed on saturated assets) happen **before a candidate
+exists**, in the layer the skill didn't govern. New lightweight `assets/target.template.json` +
+`validate_target` + `--stage target`, created first for every target selected *or* rejected. It gates
+on live-pulled facts: `scope.eligible_for_bounty` (from a live `GetProgramScopeDetail` pull, never
+memory), a **verbatim** `poc_policy.quote` (you cannot decide source-viability in either direction on
+a paraphrase), asset-level `saturation`, and a `disposition` — where **`ROTATED` is a terminal verdict
+owed the same live evidence as a `KILL`.** Being light, it is also the upfront checkpoint the heavy
+`candidate.json` wasn't (which the session showed getting back-filled at report time).
+
+Includes all v0.5.1 fixes below. Suite 58 → 65 (7 target-ledger cases). SKILL.md 304 lines.
+Memory `reference_bounty_failure_distribution` corrected: the dup driver is ~half impact-bar, not
+mostly saturation.
+
+**Not built (rejected with reasons):** a `duplicate_information.substate` novelty gate (tooling can't
+judge informative-ness — the user's call); a review-to-candidate digest (unverifiable); a `hunt.json`
+state machine / campaign-stop (the ledger is entry/exit only); a native H1 draft-intake signal
+(MCP-dependent, not confirmed live).
+
 ## v0.5.1 — correctness holes in the independence spine
 
 A research-tight re-review of v0.5.0 found that the new independence machinery, while directionally
