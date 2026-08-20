@@ -1,6 +1,7 @@
 {
   "schema_version": 5,
   "candidate_id": "",
+  "target_ledger_id": "",
   "decision_history": [],
   "hypothesis_queue": [],
   "intent_corpus": {
@@ -11,7 +12,13 @@
     "finding_match": "none"
   },
   "adversarial_review": {
-    "reviewer": "self",
+    "reviewer": {
+      "mode": "self",
+      "id": "",
+      "reviewed_at": "",
+      "artifact": "",
+      "fresh_context": false
+    },
     "advocate": {
       "layers_checked": [],
       "fp_pattern_hits": [],
@@ -25,6 +32,18 @@
       "subclaims": []
     },
     "causal": []
+  },
+  "closure_review": {
+    "verdict": "UNREVIEWED",
+    "closures_challenged": [],
+    "probe_assessment": {
+      "sufficient": false,
+      "waived": false,
+      "waiver_reason": "",
+      "evidence": ""
+    },
+    "coverage_gaps": [],
+    "remaining_high_value_hypotheses": []
   },
   "exhaustion": {
     "tried": [],
@@ -43,7 +62,8 @@
     "reviewer": "self",
     "widened_radius": "",
     "escalated_severity": "",
-    "deepened_poc": ""
+    "deepened_poc": "",
+    "completed_at": ""
   },
   "variant_sweep": {
     "flow_shape": "",
@@ -53,6 +73,9 @@
     "variants_found": []
   },
   "target": {
+    "platform": "",
+    "route_type": "",
+    "asset_type": "",
     "operating_mode": "SOURCE_ONLY",
     "program": "",
     "asset": "",
@@ -107,7 +130,7 @@
     "observed_result": "",
     "negative_controls": [],
     "production_relevance": "",
-    "config_dependency": "none"
+    "config_dependency": "unknown"
   },
   "route": {
     "owning_project": "",
@@ -129,7 +152,11 @@
         "result": "unavailable",
         "reason": "",
         "closest_match": null,
-        "evidence": {"method": "", "query": "", "artifact": ""}
+        "evidence": {
+          "method": "",
+          "query": "",
+          "artifact": ""
+        }
       },
       {
         "source": "program_disclosures",
@@ -138,7 +165,11 @@
         "result": "unavailable",
         "reason": "",
         "closest_match": null,
-        "evidence": {"method": "", "query": "", "artifact": ""}
+        "evidence": {
+          "method": "",
+          "query": "",
+          "artifact": ""
+        }
       },
       {
         "source": "upstream_history",
@@ -147,11 +178,48 @@
         "result": "unavailable",
         "reason": "",
         "closest_match": null,
-        "evidence": {"method": "", "query": "", "artifact": ""},
+        "evidence": {
+          "method": "",
+          "query": "",
+          "artifact": ""
+        },
         "channels": [
-          {"channel": "commits", "query": "", "result": "unavailable", "reason": "", "closest_match": null, "evidence": {"method": "git_log", "query": "", "artifact": ""}},
-          {"channel": "issues", "query": "", "result": "unavailable", "reason": "", "closest_match": null, "evidence": {"method": "github_issue_search", "query": "", "artifact": ""}},
-          {"channel": "pull_requests", "query": "", "result": "unavailable", "reason": "", "closest_match": null, "evidence": {"method": "github_pr_search", "query": "", "artifact": ""}}
+          {
+            "channel": "commits",
+            "query": "",
+            "result": "unavailable",
+            "reason": "",
+            "closest_match": null,
+            "evidence": {
+              "method": "git_log",
+              "query": "",
+              "artifact": ""
+            }
+          },
+          {
+            "channel": "issues",
+            "query": "",
+            "result": "unavailable",
+            "reason": "",
+            "closest_match": null,
+            "evidence": {
+              "method": "github_issue_search",
+              "query": "",
+              "artifact": ""
+            }
+          },
+          {
+            "channel": "pull_requests",
+            "query": "",
+            "result": "unavailable",
+            "reason": "",
+            "closest_match": null,
+            "evidence": {
+              "method": "github_pr_search",
+              "query": "",
+              "artifact": ""
+            }
+          }
         ]
       },
       {
@@ -161,7 +229,11 @@
         "result": "unavailable",
         "reason": "",
         "closest_match": null,
-        "evidence": {"method": "", "query": "", "artifact": ""}
+        "evidence": {
+          "method": "",
+          "query": "",
+          "artifact": ""
+        }
       }
     ],
     "closest_known_match": null,
@@ -174,7 +246,11 @@
       "checked_at": "",
       "path": "",
       "result": "unavailable",
-      "evidence": {"method": "", "query": "", "artifact": ""}
+      "evidence": {
+        "method": "",
+        "query": "",
+        "artifact": ""
+      }
     }
   },
   "decision": {
