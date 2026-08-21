@@ -284,7 +284,7 @@ Score the reproduced capability, not the bug class or theoretical maximum.
 Generate a report only after:
 
 ```bash
-python scripts/validate-candidate.py --stage report candidate.json
+python scripts/validate_hunt.py --stage report --target-ledger target.json candidate.json
 ```
 
 Use:
@@ -328,7 +328,7 @@ Fix the authoritative enforcement point and add the demonstrated regression cont
 After setting any verdict, validate the evidence appropriate to where research ended:
 
 ```bash
-python scripts/validate-candidate.py --stage decision candidate.json
+python scripts/validate_hunt.py --stage decision --target-ledger target.json candidate.json
 ```
 
 - **REPORTABLE @ reportability:** full trace, proof, route, and novelty validation passes with real artifacts.
