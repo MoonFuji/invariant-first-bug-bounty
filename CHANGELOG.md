@@ -1,6 +1,34 @@
 # Changelog
 
-## Unreleased — target-bound integrity pass (PR #1 review fixes)
+## v0.7.0 — target-bound validation architecture (2026-08-21)
+
+v0.6.0 introduced the target ledger as a concept checked by a `--stage target` flag on the candidate
+validator. This release makes it an architecture: candidates are mechanically bound to a live-evidence
+ledger they cannot drift from, and the caveat gate the v0.6.0 review left fail-open is closed. Landed
+via PR #1 (`fix/target-ledger-integrity`).
+
+### Target-bound validation
+- **New `scripts/validate_hunt.py`** is the authoritative entrypoint for every stage. It wraps the
+  untouched candidate-core validator (`validate-candidate.py`, still 65/65) and adds the target layer,
+  so the legacy checker can no longer be run alone to bypass binding, rotation semantics, reviewer
+  attestation, or final clean-review.
+- **Schema-2 target ledger** (`assets/target.template.json`, `scripts/hunt_validation/target.py`) with
+  a gate-aware `SELECTED` / `ROTATED` / `HOLD` decision. `SELECTED` requires live-checked scope,
+  proof-policy, and saturation; `ROTATED` must carry a structured `rotation_basis` and cite the
+  *identical* gate artifact as its basis (`same_evidence`), so a "too hard" rotation is structurally
+  impossible; `HOLD` names the missing live evidence.
+- **`scripts/start_candidate.py`** generates the candidate from a `SELECTED` ledger, copying target
+  identity, revision, scope timestamp, and disclosure visibility; `validate_candidate_target_binding`
+  re-checks that binding at every later stage.
+- **Structured reviewer attestations** (`{mode, id, reviewed_at, artifact, fresh_context}`) replace the
+  free-form reviewer string; a legacy string reviewer now fails clearly instead of silently passing as
+  independent. Timestamps are ordered hardening < review < decision.
+- **Closure tax** on a clean `NO_REPORTABLE_FINDING`: `DEPTH_SUFFICIENT` verdict, `DISPROVED`
+  cold_verify with ≥1 unsupported subclaim, ≥1 challenged closure, and `coverage_gaps` /
+  `remaining_high_value_hypotheses` treated as continuation inputs, not permission to erase unfinished
+  work.
+
+### Integrity corrections from the PR review
 
 Review of `fix/target-ledger-integrity` against the v0.6.0 design intents produced five corrections:
 
@@ -24,6 +52,9 @@ Review of `fix/target-ledger-integrity` against the v0.6.0 design intents produc
 5. **Closure honesty warning**: a final clean closure claiming both empty `coverage_gaps` and
    empty `remaining_high_value_hypotheses` emits a warning — a fully-covered-target claim must
    survive its own exhaustion record.
+
+Suite: 65/65 candidate-core + 9/9 target-bound groups + 4/4 CLI smoke. SKILL.md 401 lines. CI pins the
+validation actions and runs all three suites plus JSON-template validation on every push and PR.
 
 ## v0.6.0 — govern the pre-candidate layer: the caveat is the verdict + the target ledger
 
