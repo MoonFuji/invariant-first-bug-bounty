@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.7.1 — reference drift fix (2026-08-21)
+
+`references/methodology-and-targeting.md` still invoked the pre-v0.7.0 `validate-candidate.py --stage`
+entrypoint in its report- and decision-stage examples — the standalone call SKILL.md forbids because it
+bypasses target binding, rotation semantics, reviewer attestation, and final clean-review. Both examples
+now use the target-bound `validate_hunt.py --stage ... --target-ledger target.json` entrypoint. Docs
+only; no validator or schema change.
+
 ## v0.7.0 — target-bound validation architecture (2026-08-21)
 
 v0.6.0 introduced the target ledger as a concept checked by a `--stage target` flag on the candidate
