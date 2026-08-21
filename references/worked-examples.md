@@ -1,50 +1,28 @@
 # Worked Examples
 
-## Contents
-- Example 1 — the subtle KILL: owned boundary vs. integrator misuse (`KILL @ refutation`)
-- Example 2 — a clean REPORTABLE: cross-tenant read (`REPORTABLE @ reportability`)
-- Example 3 — HOLD: proof stuck at primitive fidelity (`HOLD @ proof`)
-- Example 4 — ROUTE_ELSEWHERE: the fix belongs upstream (`ROUTE_ELSEWHERE @ route`)
-- Calibration from synthetic gate examples — the caveat is the verdict
+These examples are intentionally generic and do not reproduce private or undisclosed report details. Section 7 calibrates the caveat discipline against the maintainer's real adjudicated informatives, anonymized to their gate logic — copy the calibration, not the products.
 
-Four candidates walked to a terminal verdict, showing the decisive `candidate.json` fields
-(not the whole file — see `assets/candidate.template.json` for the full shape). Copy the
-*shape of the reasoning*, not the specifics. The point of each is the gate where it lands and
-why.
+## 1. Documented raw-builder contract — `KILL @ refutation`
 
-## Example 1 — the subtle KILL: owned boundary vs. integrator misuse
+A query-builder exposes both a raw API and a parameterized API. A downstream application passes request input into the raw API and becomes injectable.
 
-**Situation.** `querykit` is an in-scope query-builder library with its own bounty program.
-Its `build_where(field, value)` concatenates `value` into SQL unescaped. A popular integrator,
-`shopflow`, calls `build_where("email", request.form["email"])`, so an attacker hitting
-`shopflow` injects SQL. The tempting move is to report SQLi to `querykit` and attach the
-`shopflow` path as proof.
-
-**Why it is not a `querykit` finding.** Read `querykit`'s contract first (Workflow step 1, intent
-corpus). Its README documents `build_where` as a *raw* builder: the caller must pre-sanitize;
-a separate `bind()` API parameterizes. So the unescaped concatenation is **documented behavior**,
-not a violated invariant `querykit` owns. `shopflow` fed request input into a raw builder — that
-is `shopflow`'s missing validation. The downstream PoC proves the *integrator* is exploitable,
-not that `querykit` broke a promise (rationalizations table: "But a real integrator forwards
-untrusted input into this").
-
-**Decisive fields.**
+The library documents that the raw API accepts pre-sanitized fragments and delegates escaping to the caller. The downstream application is vulnerable, but the library did not violate a security property it owns.
 
 ```jsonc
 "intent_corpus": {
-  "checked_at": "2026-08-18",
-  "sources": ["README.md", "build_where docstring"],
   "intentional_behaviors": [
-    { "quote": "build_where is a raw builder; callers must pass sanitized values. Use bind() to parameterize.",
-      "source": "README.md#raw-builders" }
+    {
+      "quote": "Raw fragments must be sanitized by the caller; use bind() for parameterization.",
+      "source": "README.md#raw-api"
+    }
   ],
   "finding_match": "intentional"
 },
 "threat_model": {
   "strongest_refutation": {
-    "claim": "querykit's build_where is a raw builder whose documented contract delegates escaping to the caller",
+    "claim": "the raw API delegates escaping to the caller",
     "kind": "behavior_is_documented_contract",
-    "evidence": "README.md#raw-builders states callers must sanitize; bind() is the parameterizing API",
+    "evidence": "README.md#raw-api",
     "resolution": "",
     "resolution_source": "none",
     "result": "confirmed"
@@ -55,185 +33,165 @@ untrusted input into this").
   "gate": "refutation",
   "failed_gates": ["refutation"],
   "missing_evidence": [],
-  "reason": "unescaped concat is querykit's documented raw-builder contract; the bug is shopflow's missing validation",
-  "decided_at": "2026-08-18"
+  "reason": "the downstream caller violated the documented raw-input contract"
 }
 ```
 
-`intent_corpus.finding_match: "intentional"` and the terminal refutation kind both forbid
-`REPORTABLE`; the validator lands it at `KILL @ refutation`. If `querykit` instead presented
-`build_where` as a normal, safe method (no trusted-input contract), the honest kind would be
-`non_terminal` and the finding could proceed — with a `querykit`-only PoC, never `shopflow`'s
-code. Route the real issue to `shopflow`; a hardening suggestion to `querykit` is not a bounty.
+Route the real bug to the downstream application. A misuse-resistance improvement in the library may be worthwhile, but it is not automatically a bounty vulnerability.
 
-## Example 2 — a clean REPORTABLE: cross-tenant read
+## 2. Cross-tenant object read — `REPORTABLE`
 
-**Situation.** `acme-saas` is an in-scope hosted product backed by public source. The invariant:
-a user reads only records in their own tenant. `GET /api/reports/:id` loads by primary key with
-no tenant predicate, so tenant A reads tenant B's report.
+The invariant is “tenant A reads only tenant A records.” A handler loads a record by global primary key without applying the authenticated tenant predicate.
 
-**Why it clears every gate.** Two owned test tenants in a local deployment (`PROGRAM_HOSTED` not
-needed — reproduced on a researcher-owned instance) show tenant A retrieving tenant B's uniquely
-tagged record, with an anonymous control returning 401 and a same-tenant control returning the
-row. The strongest refutation — "maybe the id is unguessable / maybe middleware scopes it" — is
-defeated by target-owned evidence: ids are sequential and the handler has no tenant filter.
-Novelty search (own reports, program disclosures, upstream issues/PRs, current branch) finds no
-match; the current default branch still carries the flaw.
+Two owned tenants prove tenant A can retrieve tenant B’s canary. Anonymous and nonexistent-object controls behave as expected.
 
-**Decisive fields.**
+The one-sentence attacker model has no load-bearing hedge:
+
+> The attacker, who holds a normal tenant-A account, crosses the tenant boundary to read tenant-B data they could not read before.
 
 ```jsonc
 "threat_model": {
-  "capability_before": "tenant A reads only tenant A records",
-  "capability_after": "tenant A reads any tenant's report by id",
-  "strongest_refutation": {
-    "claim": "the report id may be unguessable or middleware may scope the query to the tenant",
-    "kind": "non_terminal",
-    "evidence": "ids are sequential integers; ReportController#show has no org_id/tenant filter",
-    "resolution": "the handler loads Report.find(params[:id]) with no tenant predicate; A retrieves B's tagged record",
-    "resolution_source": "target_owned",
-    "result": "refuted"
-  }
+  "capability_before": "tenant A reads tenant A records",
+  "capability_after": "tenant A reads tenant B records by id"
 },
 "proof": {
   "type": "executable-local-exact-path",
-  "artifact": "poc.sh",
-  "command": "./poc.sh (tenant-A token GETs tenant-B report id)",
-  "observed_result": "200 with tenant-B's canary field; anon control 401; same-tenant control 200",
-  "negative_controls": ["anonymous request returns 401", "nonexistent id returns 404"],
-  "production_relevance": "same handler and route ship in the hosted product"
+  "command": "./poc.sh",
+  "observed_result": "tenant-A token returned tenant-B canary",
+  "negative_controls": [
+    "anonymous request returned 401",
+    "nonexistent id returned 404"
+  ],
+  "config_dependency": "none"
 },
-"adversarial_review": {
-  "advocate": { "layers_checked": ["framework","application","middleware"], "fp_pattern_hits": [], "blocks": false },
-  "cold_verify": { "verdict": "CONFIRMED", "rederived_severity": "high", "killed_subclaim": null }
-},
-"novelty": { "classification": "distinct", "private_duplicate_risk": "medium" },
 "decision": {
   "verdict": "REPORTABLE",
-  "gate": "reportability",
-  "failed_gates": [],
-  "missing_evidence": [],
-  "reason": "cross-tenant read reproduced on the exact shipped path with controls; distinct and still live",
-  "decided_at": "2026-08-18"
+  "gate": "reportability"
 }
 ```
 
-The refutation is `non_terminal` with a `target_owned` resolution and its own evidence;
-capability changed; proof exercises the exact shipped path with a negative control;
-`cold_verify` is `CONFIRMED`; novelty is `distinct`. `--stage report` exits 0 and the report may
-be drafted.
+Ordinary limitations can remain: the PoC may not enumerate all affected object types, and severity should reflect only the data proven readable. Those limitations do not negate the crossed tenant boundary.
 
-## Example 3 — HOLD: proof stuck at primitive fidelity
+## 3. Substitute-client SSRF — `HOLD @ proof`
 
-**Situation.** SSRF candidate in `acme-gateway`. The trace is complete, the capability delta is
-real, and the strongest refutation is resolved — but the only PoC runs against a substitute HTTP
-client that copies the vulnerable lines, not the exact shipped executable through its real request
-path. Rent is due and a novelty window is closing.
+A copied helper or compatible HTTP client follows an attacker-controlled URL, but the exact shipped binary and real product invocation were not exercised.
 
-**Why it holds, not reports.** Everything through the `refutation` gate is evidenced, so this is
-not a `KILL`. But `proof` needs the exact shipped path (Workflow step 8): a substitute client is
-primitive fidelity only. Pressure is not evidence (Red flags — STOP). The honest verdict is
-`HOLD` with the one missing artifact named — a success, and a to-do, not a report.
+The primitive is plausible, yet executable and boundary fidelity remain unproven.
 
 ```jsonc
-"proof": {
-  "type": "none",
-  "artifact": "poc_substitute_client.py",
-  "command": "python poc_substitute_client.py",
-  "observed_result": "substitute client follows the attacker URL — primitive fidelity only",
-  "negative_controls": [],
-  "production_relevance": "not yet established through the shipped path"
-},
 "decision": {
   "verdict": "HOLD",
   "gate": "proof",
   "failed_gates": [],
   "missing_evidence": [
-    "invoke the exact pinned acme-gateway binary through its real request handler; capture the listener hit, version/command artifacts, exit status, and a negative control that a blocked URL fails"
-  ],
-  "reason": "trace and refutation complete; proof is primitive-only, exact shipped path not yet exercised",
-  "decided_at": "2026-08-18"
+    "invoke the exact pinned binary through the real request/configuration path and capture the listener hit plus a blocked-URL control"
+  ]
 }
 ```
 
-`HOLD` requires an empty `failed_gates` and a non-empty `missing_evidence`; the validator checks
-the evidence accumulated through the gate *before* `proof`. Build the real path next; the finding
-either upgrades to `REPORTABLE` or dies at `KILL @ reachability` when a guard neutralizes it.
+“The product exposes a URL field” is a load-bearing caveat when the proof depends on a representation that may be normalized or rejected before reaching the executable.
 
-## Example 4 — ROUTE_ELSEWHERE: the fix belongs upstream
+## 4. Vulnerable dependency owned upstream — `ROUTE_ELSEWHERE`
 
-**Situation.** A path-traversal bug reproduces in `acme-app`, but the flaw lives entirely in an
-open-source archive-extraction library `acme-app` bundles unmodified. `acme-app` neither wrote nor
-can fix the defective code; the upstream library owns the boundary and would ship the fix.
-
-**Why it routes.** The bug is real and reproduced, so it is not a `KILL @ reachability`. But
-`acme-app`'s program does not own the faulty code (Workflow step 9). The strongest refutation is a
-confirmed `target_does_not_own_security_property`; a confirmed terminal refutation of that kind
-lands at `ownership|route`. Here another project owns and can fix it, so route it upstream (advisory
-/ its own program), not to `acme-app`.
+A product bundles an unmodified archive library with a traversal bug. The product proves reachability, but the faulty implementation and fix belong to the upstream project.
 
 ```jsonc
 "threat_model": {
   "strongest_refutation": {
-    "claim": "the traversal is implemented in the bundled upstream library, which owns and enforces this boundary",
+    "claim": "the target does not own this security property",
     "kind": "target_does_not_own_security_property",
-    "evidence": "the vulnerable extract() ships verbatim from upstream vX.Y; acme-app calls it unmodified",
+    "evidence": "the vulnerable extract() implementation is shipped verbatim from upstream",
     "resolution": "",
     "resolution_source": "none",
     "result": "confirmed"
   }
 },
 "route": {
-  "owning_project": "upstream-org/archive-lib",
-  "owner_evidence": "the defective extract() is defined and shipped by upstream-org/archive-lib vX.Y",
-  "submission_target": "upstream advisory to upstream-org/archive-lib (or its bounty program)",
+  "owning_project": "upstream/archive-lib",
   "type": "upstream-advisory",
   "owner_verified": true
 },
 "decision": {
   "verdict": "ROUTE_ELSEWHERE",
-  "gate": "route",
-  "failed_gates": [],
-  "missing_evidence": [],
-  "reason": "real traversal, but the faulty code is owned and fixed by the upstream library, not acme-app",
-  "decided_at": "2026-08-18"
+  "gate": "route"
 }
 ```
 
-Filing this against `acme-app`'s program because it has a payout is venue-shopping; the fix — and
-the valid disclosure — belongs where the code lives.
+## 5. Load-bearing versus ordinary caveats
 
-## Calibration from synthetic gate examples — the caveat is the verdict
+Use this test:
 
-Every finding below was a **real code defect, competently proven** — and closed **Informative**.
-In each, the hunter *wrote the disqualifying sentence into its own report*, then submitted as if
-that sentence were a footnote. It is not a footnote; **it is the verdict. A hedge you write about
-your own impact is a kill-condition, not a disclosure.** If a draft contains "does not prove
-production exposure", "does not bypass authentication", "requires control of env/config", "no
-production path is required for the demonstrated case", or "may be treated as non-core/beta", that
-clause forbids `REPORTABLE` until it is removed by *evidence*, not by argument. This is the mirror
-of the "doubt must be evidenced" rule (`adversarial-self-review.md`), pointed at self-hedges about
-*impact* instead of *mitigations* — and it is a **reading discipline**, not a field: no validator
-can smell an informative, so you must catch your own hedge.
+> The attacker, who already holds X, crosses boundary Y to gain capability Z they could not exercise before.
 
-**The one-sentence test.** Before `REPORTABLE`, write exactly: *"The attacker, who already holds
-X, crosses boundary Y to gain capability Z they could not do before."* If you cannot write it
-without a hedge, the verdict is `KILL`/`HOLD`. Four kill-questions, each anchored to a finding that
-was really submitted and really closed informative:
+Record every hedge this test surfaces in the candidate's `caveats` ledger — one `{quote, classification, justification}` entry per hedge, quoting your own draft wording. A `load_bearing` classification mechanically blocks `REPORTABLE`.
 
-| Kill-question | Real informative | The self-caveat it *contained* (verbatim) | Lands at |
+### Fatal caveat: precondition already grants the effect
+
+> Exploitation requires the attacker to edit the victim service’s environment variables.
+
+When environment control already permits secret replacement, code execution, or equivalent authority, the alleged token leak may add no new capability. This lands at `capability_delta` unless a less-trusted actor can reach that setting through a target-owned path.
+
+### Fatal caveat: deployment route not demonstrated
+
+> The local default is vulnerable, but the report does not establish that the accepted production or source-code route uses this default.
+
+This is `HOLD @ proof` when the destination requires that deployment relevance. It is not fatal when the program explicitly accepts the exact local shipped path as sufficient proof.
+
+### Fatal caveat: bypassed control is not a security boundary
+
+> The action still requires the same valid API credential; only a user-confirmation prompt is bypassed.
+
+If the credential-holder could already perform the operation directly, the prompt bypass may add no security capability. That is a `capability_delta` question, not an automatic finding.
+
+### Ordinary limitation: narrower affected surface
+
+> Only the report-read endpoint was tested; export and delete were not tested.
+
+The proven cross-tenant read remains reportable. This limitation constrains blast radius and severity and belongs in the report.
+
+### Ordinary limitation: no stronger chain demonstrated
+
+> The PoC reads a benign canary file but does not prove cloud credentials or code execution.
+
+The demonstrated file-read capability may still be reportable on the accepted boundary. Do not inflate it to stronger assets; keep the limitation and score the captured effect.
+
+## 6. Target rotation examples
+
+### Valid rotation at scope
+
+A live scope artifact marks the exact asset ineligible. The ledger records:
+
+```jsonc
+"decision": {
+  "disposition": "ROTATED",
+  "gate": "scope",
+  "rotation_basis": "scope_ineligible",
+  "reason": "the live scope response marks this exact asset ineligible"
+}
+```
+
+Downstream proof-policy and saturation fields may remain unassessed because scope already terminated selection.
+
+### Invalid rotation
+
+```jsonc
+"decision": {
+  "disposition": "ROTATED",
+  "reason": "the target looks hardened and the proof would take too long"
+}
+```
+
+This is not evidence. Use `HOLD` if a required live artifact is unavailable, or continue the selected target.
+
+## 7. Calibration from closed informatives — the caveat is the verdict
+
+These are synthetic gate examples and do not come from a maintainer, researcher, program, or submitted report. Each example shows a plausible defect that still lacks a reportable boundary or effect. In each example, the load-bearing caveat determines the verdict. That is the failure mode this discipline exists for: not weak analysis, but unheeded self-knowledge.
+
+| Anonymized finding | The hedge it submitted (near-verbatim) | Why it was informative | Gate it should have died at |
 |---|---|---|---|
-| **Boundary** — do attacker and victim differ, or is it the same realm/principal? | `an anonymized key-management component` key-leak (case A) | *"No separate principal or reachable cross-context sink is demonstrated"* — the recovering caller is the **same principal** already holding the signer; the cross-realm sink is asserted, never shown | `KILL @ reachability` |
-| **Precondition** — does what the attacker must already hold already grant the effect? | an anonymized transport-policy case cleartext-token (case B) | *"Gated behind attacker influence over `base_url` via env/config"* — writing the victim's env is already ≥ the stolen token; also flagged *"may be treated as non-core"* (beta) | `KILL @ capability_delta` |
-| **Deployment** — an insecure default a real deployment overrides, undemonstrated live? | an anonymized query-endpoint case default-config (case D) | *"this draft does not prove live production deployment exposure … Do not submit as High"* — manifests only under a shipped default (`service_authz: disabled`) real deployments override with VPC/allowlist | `HOLD @ proof` (config-dependency) |
-| **Control class** — is the bypassed thing an authz boundary, or defense-in-depth/UX? | an anonymized API-integration control case (case E) | *"Authentication and authorization still succeed exactly as designed"* — the "control" is an agent acknowledgement prompt; the credential-holder could already make the call | `KILL @ capability_delta` |
+| Same-principal recovery API | "No separate principal or reachable cross-context sink is demonstrated" | The caller that recovers the key already holds the signer — no trust boundary is crossed in the demonstrated PoC; the cross-context sink was asserted, never shown | Boundary / reachability |
+| Transport check controlled by trusted process configuration | "The assumed attacker can already rewrite security-sensitive configuration" (+ "may be treated as non-core") | An attacker who can write the victim's config already holds authority ≥ the stolen token; the "new capability" never exceeds the precondition | Precondition / capability delta |
+| Development-default query exposure | "No supported or deployed configuration using the default is demonstrated" | Manifested only under a shipped-insecure default whose production reachability was never demonstrated; the report graded itself down and was still informative-tier | Deployment / proof route |
+| Warning-step bypass with a valid privileged credential | "Authentication and authorization still succeed exactly as designed" | Bypassing a warning prompt while holding the valid credential adds no capability the credential lacked | Control class / capability delta |
 
-The unifying test: a real defect is not a finding until it grants a **new** capability to an
-**attacker-reachable** actor across a **crossed boundary** in a **real** deployment. Absent that it
-is `HOLD`/`KILL`, never a submission — even when the code is genuinely wrong.
-
-The `default_only` / `requires_insecure_config` cases also map to the checkable field
-`proof.config_dependency` (both forbid `REPORTABLE`; a lab-reproduced source-only finding is `none`).
-The boundary and precondition cases are `reachability` / `capability_delta` judgments the validator
-cannot make for you — which is exactly why the hedge-is-the-verdict rule is a discipline you run by
-hand, on your own draft, before `--stage report`.
+The meta-rule: **a load-bearing caveat is part of the verdict, not a footnote.** Run the one-sentence attacker-model test (section 5), record every hedge it surfaces in `caveats`, and classify honestly — the validator rejects `REPORTABLE` while any entry is classified `load_bearing`. If you cannot write the sentence without a hedge, that hedge is the verdict, not a footnote.

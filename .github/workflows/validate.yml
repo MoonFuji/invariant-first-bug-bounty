@@ -1,0 +1,30 @@
+name: Validate skill
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # releases-v4
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.12"
+      - name: Compile Python scripts
+        run: python -m compileall -q scripts
+      - name: Run candidate validator regression suite
+        run: python scripts/test_validate_candidate.py
+      - name: Run bound target-ledger regression suite
+        run: python scripts/test_validate_hunt.py
+      - name: Run target-bound CLI smoke tests
+        run: python scripts/test_validate_hunt_cli.py
+      - name: Validate JSON templates
+        run: |
+          python -m json.tool assets/target.template.json >/dev/null
+          python -m json.tool assets/candidate.template.json >/dev/null
