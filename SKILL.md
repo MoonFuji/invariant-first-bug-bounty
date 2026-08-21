@@ -55,6 +55,8 @@ TARGET HOLD
 
 Only a `SELECTED` ledger may produce candidates.
 
+Scale the process to the target. Do not cargo-cult empty process blocks onto a toy target, and do not skip gates on a large one because the trace is tiring.
+
 ## 1. Start a candidate from the selected target
 
 Generate the candidate so target identity cannot drift:
@@ -76,7 +78,7 @@ python scripts/validate_hunt.py \
   <hunt-dir>/candidates/H-001.json
 ```
 
-Do not use `validate-candidate.py` alone as the final workflow for schema-5 hunts. It is the candidate-core validator; `validate_hunt.py` adds target binding, target-decision semantics, reviewer attestation, and final clean-review checks.
+Do not use `validate-candidate.py` alone as the final workflow. It is the candidate-core validator; it cannot see the target ledger, so target binding, rotation semantics, reviewer attestation, and final clean-review checks can be bypassed. Run `validate_hunt.py` for every stage.
 
 ## 2. Orient before anchoring
 
@@ -108,6 +110,8 @@ reachability × owned-boundary confidence × impact × proofability ÷ contestab
 
 Creativity is a ranking signal, not an admission gate. A simple, clearly reachable authorization bug outranks a speculative multi-stage chain. Never delete a rejected idea from history; close it with the evidence-backed reason.
 
+Build the intent corpus lazily as you go: quote each documented or intentional security behavior you rely on with its source, and mark whether the finding matches intent. Keep it small — it exists to stop you killing a real bug as “documented behavior” from memory, not to document the target.
+
 Promote one hypothesis at a time into `model.security_invariant`.
 
 ## 4. Trace the invariant completely
@@ -126,7 +130,7 @@ attacker-controlled representation
 → observable security effect
 ```
 
-Trace every load-bearing link from source, not from training priors. Check at least one meaningful sibling or alternate version and re-derive attacker control for each sibling independently.
+Trace every claim-critical link from source, not from training priors. Check at least one meaningful sibling or alternate version and re-derive attacker control for each sibling independently.
 
 A dead end is a pivot, not an excuse to stop the target. Close the current hypothesis only after the relevant path is complete enough to prove why the capability delta cannot exist.
 
@@ -174,7 +178,21 @@ Examples:
 
 Non-load-bearing limitations remain in the report and constrain scope or severity. Do not hide honest limitations merely because a prior draft used a fatal hedge.
 
-Read `references/worked-examples.md` for calibrated examples.
+Record every hedge the test surfaces in the candidate's `caveats` ledger — one entry per hedge, quoting your own draft wording:
+
+```jsonc
+"caveats": [
+  {
+    "quote": "does not prove the product-facing input reaches this executable",
+    "classification": "load_bearing",
+    "justification": "why this hedge is or is not fatal to the claimed boundary"
+  }
+]
+```
+
+Classification stays a judgment — no validator can smell an informative — but it must be explicit and auditable. A `load_bearing` classification mechanically forbids `REPORTABLE`: remove the hedge with evidence and record that evidence in the justification, narrow the claim to what survived, or decide `HOLD`/`KILL`. An empty ledger claims the draft contains no hedges; re-run the test before asserting it.
+
+Read `references/worked-examples.md` for calibrated examples, including real (anonymized) informatives whose own submitted hedges decided them.
 
 ## 7. Shape the proof with a self-run adversarial pass
 
@@ -188,7 +206,7 @@ Keep three levels distinct:
 
 1. **Primitive fidelity**: the underlying mechanism can produce the effect.
 2. **Executable fidelity**: the exact pinned/shipped method or binary, real invocation, and shipped configuration produce it.
-3. **Boundary fidelity**: an actor permitted by the program can supply the load-bearing representation through the product-facing path and cross a target-owned boundary.
+3. **Boundary fidelity**: an actor permitted by the program can supply the exploit-critical representation through the product-facing path and cross a target-owned boundary.
 
 Use the level required by the destination and claimed impact. Capture:
 
@@ -266,7 +284,7 @@ When independent review cannot run, set mode `owed` and stop at a **provisional 
 A final candidate-level `NO_REPORTABLE_FINDING` additionally requires `closure_review`:
 
 - `verdict: DEPTH_SUFFICIENT`;
-- at least one load-bearing closure challenged with evidence;
+- at least one verdict-critical closure challenged with evidence;
 - a sufficient adversarial probe, or a narrowly evidenced waiver;
 - explicit `coverage_gaps` and `remaining_high_value_hypotheses` arrays.
 
@@ -313,6 +331,8 @@ After every terminal candidate verdict:
 
 None of these verdicts alone means the target is clean.
 
+`HOLD` is scoped to its layer: a *target* HOLD governs selection (step 0, `TARGET HOLD`); a *candidate* HOLD governs this hypothesis's decision; a *closure* HOLD means the clean exit is unproven. None of them licenses stopping the campaign.
+
 ## Depth contract
 
 Do not rotate because a trace is difficult or slow. Rotate when evidence shows the primitive is absent, the path is complete and safe, the route is dead, or a documented higher-EV hypothesis dominates.
@@ -346,6 +366,17 @@ Keep going when you notice:
 - concluding a runtime-only class from static reading;
 - trusting the target’s own tests as the only clean proof;
 - closing one candidate and forgetting the rest of the queue.
+
+## Rationalizations
+
+| Thought | Reality |
+|---|---|
+| “The ledger and paperwork take too long.” | The ledger is shorter than one wrong target. Select or rotate on evidence, then move. |
+| “It’s just a caveat footnote.” | A hedge you write about your own impact is a kill-condition, not a disclosure. |
+| “I generated many hypotheses, so coverage is good.” | Volume is not depth. The queue matters only when entries reach terminal evidence. |
+| “This KILL was hard-won; I did enough.” | Concluding costs the same evidence as reporting. The documented exhaustion is the verdict, not the feeling. |
+| “The validator passed, so the report is strong.” | Validators check structure and recorded evidence, not truth. Gates are floors, not certification. |
+| “One more hour of reading instead of building the PoC.” | Static certainty never crosses a runtime boundary. Build the probe. |
 
 ## References and tools
 

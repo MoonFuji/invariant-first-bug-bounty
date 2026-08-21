@@ -75,11 +75,11 @@ An unrebutted pattern blocks `REPORTABLE`.
 
 Re-derive the claim from source and evidence rather than validating the author’s prose.
 
-Decompose it into load-bearing subclaims, for example:
+Decompose it into claim-critical subclaims, for example:
 
 ```text
 A. the attacker controls X
-B. X reaches Y in the load-bearing representation
+B. X reaches Y in the exploit-critical representation
 C. no authoritative control blocks Y
 D. Y causes effect Z
 E. Z is a new capability across a target-owned boundary
@@ -95,7 +95,7 @@ Persist each link:
 }
 ```
 
-`REPORTABLE` requires every load-bearing link to be supported. One unsupported link means `DISPROVED` or `UNCERTAIN`, never `CONFIRMED`.
+`REPORTABLE` requires every claim-critical link to be supported. One unsupported link means `DISPROVED` or `UNCERTAIN`, never `CONFIRMED`.
 
 Reassess severity from the demonstrated effect. Starting at MEDIUM is a useful anti-inflation discipline, not a forced final score.
 
@@ -178,7 +178,7 @@ Populate `closure_review`:
 A final candidate-level `NO_REPORTABLE_FINDING` requires:
 
 - `DEPTH_SUFFICIENT`;
-- at least one load-bearing closure challenged with evidence;
+- at least one verdict-critical closure challenged with evidence;
 - a sufficient researcher-designed adversarial probe, or a narrowly evidenced waiver;
 - explicit coverage-gap and remaining-hypothesis arrays.
 

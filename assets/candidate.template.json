@@ -11,6 +11,7 @@
     "acknowledged_risks": [],
     "finding_match": "none"
   },
+  "caveats": [],
   "adversarial_review": {
     "reviewer": {
       "mode": "self",

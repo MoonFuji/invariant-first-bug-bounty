@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased — target-bound integrity pass (PR #1 review fixes)
+
+Review of `fix/target-ledger-integrity` against the v0.6.0 design intents produced five corrections:
+
+1. **Caveat ledger with mechanical teeth.** The load-bearing/ordinary caveat refinement was
+   semantically sound but fail-open: the submitting agent self-classified its own hedge at the
+   moment of maximum motivated reasoning, with zero structural friction. New `caveats[]` ledger
+   (`{quote, classification, justification}`) is required on every `REPORTABLE`; a `load_bearing`
+   classification rejects the stage until evidence removes the hedge, the claim is narrowed, or
+   the candidate is decided `HOLD`/`KILL`. Classification stays a judgment — no tooling pretends
+   to smell an informative — but it is now explicit and auditable instead of silent.
+2. **Anonymized-but-concrete calibration restored.** The four real informative case studies
+   (near-verbatim submitted hedges anchored to the gates they should have died at) are back in
+   `references/worked-examples.md` §7 without program names, products, or report identifiers.
+   Fully generic examples alone were the abstraction level that had already failed before v0.6.0.
+3. **Anti-laziness and anti-bureaucracy prose restored**: the scale-to-target guard (step 0), a
+   compact Rationalizations table, the lazy intent-corpus instruction (step 3), and a scoped-HOLD
+   note distinguishing target/candidate/closure HOLDs.
+4. **Terminology discipline**: "load-bearing" now means caveats only — closures are
+   "verdict-critical", links "claim-critical", representations "exploit-critical"; the dangling
+   schema-5 reference in step 1 was rewritten to state the actual bypass risk.
+5. **Closure honesty warning**: a final clean closure claiming both empty `coverage_gaps` and
+   empty `remaining_high_value_hypotheses` emits a warning — a fully-covered-target claim must
+   survive its own exhaustion record.
+
 ## v0.6.0 — govern the pre-candidate layer: the caveat is the verdict + the target ledger
 
 Driven by reading a full real hunting session (9 hunts, Aug-17→20) and the user's duplicate-origin
