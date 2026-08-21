@@ -128,7 +128,9 @@ Before reporting, state:
 
 > The attacker, who already holds X, crosses boundary Y to gain capability Z they could not exercise before.
 
-A caveat is fatal only when it negates the attacker-controlled source, crossed boundary, new capability, target-owned property, accepted proof route, or security-enforcing nature of the control. Ordinary limitations remain in the report and constrain scope or severity. This avoids both submitting informatives and deleting honest limitations merely because they sound cautious.
+A caveat is fatal only when it negates the attacker-controlled source, crossed boundary, new capability, target-owned property, accepted proof/deployment route, or security-enforcing nature of the control. Ordinary limitations remain in the report and constrain scope or severity. This avoids both submitting informatives and deleting honest limitations merely because they sound cautious.
+
+Record every hedge the attacker-model test surfaces in the candidate's `caveats` ledger — one `{quote, classification, justification}` entry per hedge, quoting your own draft wording. Classification stays a judgment, but a `load_bearing` classification mechanically blocks `REPORTABLE` until evidence removes the hedge.
 
 ## Independent review
 

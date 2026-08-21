@@ -10,6 +10,7 @@ from hunt_validation.candidate import (
     load_candidate_validator,
     run_candidate_validator,
     validate_candidate_target_binding,
+    validate_caveat_ledger,
     validate_closure_review,
     validate_final_review_order,
     validate_probe_shapes,
@@ -22,7 +23,7 @@ from hunt_validation.target import canonical_target_value, scope_evidence_summar
 # Re-export helpers used by start_candidate.py and regression tests.
 __all__ = [
     "ValidationError", "canonical_target_value", "scope_evidence_summary", "emit_messages", "load_json",
-    "validate_candidate_target_binding", "validate_closure_review",
+    "validate_candidate_target_binding", "validate_caveat_ledger", "validate_closure_review",
     "validate_final_review_order", "validate_probe_shapes", "validate_report_target_contract",
     "validate_review_attestation", "validate_target",
 ]
@@ -88,11 +89,14 @@ def main() -> int:
             document, errors, allow_owed=args.stage == "decision"
         )
         if verdict == "NO_REPORTABLE_FINDING":
-            validate_closure_review(document, errors, provisional=reviewer_mode == "owed")
+            validate_closure_review(
+                document, errors, provisional=reviewer_mode == "owed", warnings=warnings
+            )
         if reviewer_mode != "owed":
             validate_final_review_order(document, errors)
 
     if verdict == "REPORTABLE":
+        validate_caveat_ledger(document, errors)
         validate_report_target_contract(document, target, errors)
 
     proof = document.get("proof")

@@ -11,6 +11,7 @@ from .target import canonical_target_value, scope_evidence_summary
 
 FINAL_REVIEW_MODES = {"independent_agent", "human"}
 REVIEW_MODES = FINAL_REVIEW_MODES | {"self", "owed"}
+CAVEAT_CLASSIFICATIONS = {"load_bearing", "ordinary"}
 
 
 def load_candidate_validator() -> ModuleType:
@@ -68,7 +69,49 @@ def validate_review_attestation(
     return mode
 
 
-def validate_closure_review(document: dict[str, Any], errors: list[str], *, provisional: bool) -> None:
+def validate_caveat_ledger(document: dict[str, Any], errors: list[str]) -> None:
+    """Every hedge surfaced by the one-sentence attacker-model test must be
+    recorded and classified. Classification stays a judgment; the ledger makes
+    it explicit and auditable instead of silent. A self-classified
+    load-bearing caveat forbids REPORTABLE until evidence removes it."""
+    decision = document.get("decision") if isinstance(document.get("decision"), dict) else {}
+    if decision.get("verdict") != "REPORTABLE":
+        return
+    caveats = document.get("caveats")
+    if not isinstance(caveats, list):
+        errors.append(
+            "REPORTABLE requires a caveats[] ledger with one {quote, classification, justification} "
+            "entry per hedge surfaced by the attacker-model test"
+        )
+        return
+    for index, caveat in enumerate(caveats):
+        path = f"caveats[{index}]"
+        if not isinstance(caveat, dict):
+            errors.append(f"{path} must be an object")
+            continue
+        for key in ("quote", "classification", "justification"):
+            if not text(caveat.get(key)):
+                errors.append(f"{path}.{key} must be a non-empty string")
+        classification = normalized(caveat.get("classification"))
+        if classification and classification not in CAVEAT_CLASSIFICATIONS:
+            errors.append(f"{path}.classification must be load_bearing or ordinary")
+    if any(
+        isinstance(caveat, dict) and normalized(caveat.get("classification")) == "load_bearing"
+        for caveat in caveats
+    ):
+        errors.append(
+            "a load-bearing caveat forbids REPORTABLE: remove it with evidence and record that "
+            "evidence in the justification, narrow the claim to what survived, or decide HOLD/KILL"
+        )
+
+
+def validate_closure_review(
+    document: dict[str, Any],
+    errors: list[str],
+    *,
+    provisional: bool,
+    warnings: list[str] | None = None,
+) -> None:
     clean = document.get("closure_review")
     if not isinstance(clean, dict):
         errors.append("NO_REPORTABLE_FINDING requires a closure_review block")
@@ -145,6 +188,17 @@ def validate_closure_review(document: dict[str, Any], errors: list[str], *, prov
             errors.append(f"closure_review.{key} must be an array")
         elif any(not text(item) for item in value):
             errors.append(f"closure_review.{key} items must be non-empty strings")
+
+    if (
+        warnings is not None
+        and clean.get("verdict") == "DEPTH_SUFFICIENT"
+        and not clean.get("coverage_gaps")
+        and not clean.get("remaining_high_value_hypotheses")
+    ):
+        warnings.append(
+            "clean closure claims no coverage gaps and no remaining high-value hypotheses; "
+            "ensure the exhaustion record genuinely supports a fully covered target"
+        )
 
 
 def validate_probe_shapes(document: dict[str, Any], warnings: list[str]) -> None:

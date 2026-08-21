@@ -249,6 +249,66 @@ def test_probe_warning() -> None:
     assert warnings
 
 
+def test_closure_coverage_warning() -> None:
+    doc = review_document()
+    errors: list[str] = []
+    warnings: list[str] = []
+    vh.validate_closure_review(doc, errors, provisional=False, warnings=warnings)
+    assert not errors, errors
+    assert not warnings, warnings
+
+    doc["closure_review"]["coverage_gaps"] = []
+    doc["closure_review"]["remaining_high_value_hypotheses"] = []
+    warnings = []
+    vh.validate_closure_review(doc, errors, provisional=False, warnings=warnings)
+    assert not errors, errors
+    assert any("no coverage gaps" in warning for warning in warnings), warnings
+
+    provisional_doc = review_document()
+    provisional_doc["closure_review"]["verdict"] = "UNREVIEWED"
+    warnings = []
+    vh.validate_closure_review(provisional_doc, [], provisional=True, warnings=warnings)
+    assert not warnings, warnings
+
+
+def test_caveat_ledger() -> None:
+    doc: dict = {"decision": {"verdict": "REPORTABLE"}}
+    errors: list[str] = []
+    vh.validate_caveat_ledger(doc, errors)
+    assert any("caveats[]" in error for error in errors), errors
+
+    doc["caveats"] = "none"
+    errors = []
+    vh.validate_caveat_ledger(doc, errors)
+    assert any("caveats[]" in error for error in errors), errors
+
+    doc["caveats"] = []
+    errors = []
+    vh.validate_caveat_ledger(doc, errors)
+    assert not errors, errors
+
+    doc["caveats"] = [{"quote": "only one endpoint tested", "classification": "ordinary", "justification": "constrains severity, not the boundary"}]
+    errors = []
+    vh.validate_caveat_ledger(doc, errors)
+    assert not errors, errors
+
+    doc["caveats"] = [{"quote": "does not prove production exposure", "classification": "load_bearing", "justification": ""}]
+    errors = []
+    vh.validate_caveat_ledger(doc, errors)
+    assert any("load-bearing caveat forbids REPORTABLE" in error for error in errors), errors
+    assert any("justification" in error for error in errors), errors
+
+    doc["caveats"] = [{"quote": "", "classification": "fatal", "justification": ""}]
+    errors = []
+    vh.validate_caveat_ledger(doc, errors)
+    assert len(errors) >= 3, errors
+
+    killed = {"decision": {"verdict": "KILL"}, "caveats": [{"quote": "q", "classification": "load_bearing", "justification": "j"}]}
+    errors = []
+    vh.validate_caveat_ledger(killed, errors)
+    assert not errors, errors
+
+
 def test_target_cli_labels() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "target.json"
@@ -299,6 +359,8 @@ def main() -> int:
         test_candidate_binding_and_contract,
         test_reviewer_and_closure,
         test_probe_warning,
+        test_closure_coverage_warning,
+        test_caveat_ledger,
         test_target_cli_labels,
         test_start_candidate,
     ]

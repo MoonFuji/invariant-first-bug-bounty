@@ -1,6 +1,6 @@
 # Worked Examples
 
-These examples are intentionally generic and do not reproduce private or undisclosed report details. Copy the gate logic, not the product names.
+These examples are intentionally generic and do not reproduce private or undisclosed report details. Section 7 calibrates the caveat discipline against the maintainer's real adjudicated informatives, anonymized to their gate logic — copy the calibration, not the products.
 
 ## 1. Documented raw-builder contract — `KILL @ refutation`
 
@@ -123,6 +123,8 @@ Use this test:
 
 > The attacker, who already holds X, crosses boundary Y to gain capability Z they could not exercise before.
 
+Record every hedge this test surfaces in the candidate's `caveats` ledger — one `{quote, classification, justification}` entry per hedge, quoting your own draft wording. A `load_bearing` classification mechanically blocks `REPORTABLE`.
+
 ### Fatal caveat: precondition already grants the effect
 
 > Exploitation requires the attacker to edit the victim service’s environment variables.
@@ -180,3 +182,16 @@ Downstream proof-policy and saturation fields may remain unassessed because scop
 ```
 
 This is not evidence. Use `HOLD` if a required live artifact is unavailable, or continue the selected target.
+
+## 7. Calibration from closed informatives — the caveat is the verdict
+
+These are synthetic gate examples and do not come from a maintainer, researcher, program, or submitted report. Each example shows a plausible defect that still lacks a reportable boundary or effect. In each example, the load-bearing caveat determines the verdict. That is the failure mode this discipline exists for: not weak analysis, but unheeded self-knowledge.
+
+| Anonymized finding | The hedge it submitted (near-verbatim) | Why it was informative | Gate it should have died at |
+|---|---|---|---|
+| Same-principal recovery API | "No separate principal or reachable cross-context sink is demonstrated" | The caller that recovers the key already holds the signer — no trust boundary is crossed in the demonstrated PoC; the cross-context sink was asserted, never shown | Boundary / reachability |
+| Transport check controlled by trusted process configuration | "The assumed attacker can already rewrite security-sensitive configuration" (+ "may be treated as non-core") | An attacker who can write the victim's config already holds authority ≥ the stolen token; the "new capability" never exceeds the precondition | Precondition / capability delta |
+| Development-default query exposure | "No supported or deployed configuration using the default is demonstrated" | Manifested only under a shipped-insecure default whose production reachability was never demonstrated; the report graded itself down and was still informative-tier | Deployment / proof route |
+| Warning-step bypass with a valid privileged credential | "Authentication and authorization still succeed exactly as designed" | Bypassing a warning prompt while holding the valid credential adds no capability the credential lacked | Control class / capability delta |
+
+The meta-rule: **a load-bearing caveat is part of the verdict, not a footnote.** Run the one-sentence attacker-model test (section 5), record every hedge it surfaces in `caveats`, and classify honestly — the validator rejects `REPORTABLE` while any entry is classified `load_bearing`. If you cannot write the sentence without a hedge, that hedge is the verdict, not a footnote.
