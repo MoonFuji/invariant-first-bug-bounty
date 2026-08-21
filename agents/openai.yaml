@@ -1,4 +1,5 @@
 interface:
   display_name: "Invariant-First Bug Bounty"
-  short_description: "Evidence-gated source and bug-bounty research"
-  default_prompt: "Use $invariant-first-bug-bounty to run a security campaign against this in-scope target: map the surface, enumerate and rank a queue of candidate invariants, then investigate one invariant at a time under the evidence gates. A candidate's terminal verdict closes that hypothesis, not the target — continue until the queue is exhausted with documented coverage, and validate any candidate before reporting."
+  short_description: "Target-bound, evidence-gated bug-bounty research"
+  default_prompt: >-
+    Use $invariant-first-bug-bounty to run an authorized security campaign against this target. Create and validate the live-evidence target ledger first, generate candidates from that selected ledger, map and rank the hypothesis queue, investigate one invariant at a time, continue after every candidate verdict, and do not draft a report until the target-bound validator says REPORT READY after hardening and independent final review.

@@ -1,27 +1,65 @@
 {
+  "schema_version": 2,
+  "target_id": "",
+  "platform": "hackerone",
+  "route_type": "bounty",
+  "asset_type": "repository",
   "program": "",
   "asset": "",
   "repository": "",
   "commit": "",
   "operating_mode": "SOURCE_ONLY",
   "scope": {
+    "status": "unknown",
     "asset_identifier": "",
-    "eligible_for_bounty": null,
     "max_severity": "",
     "checked_at": "",
-    "source": "GetProgramScopeDetail"
+    "reason": "",
+    "evidence": {
+      "method": "",
+      "source": "",
+      "artifact": ""
+    }
   },
-  "poc_policy": {
+  "proof_policy": {
+    "status": "unassessed",
+    "accepted_proof_types": [],
     "quote": "",
-    "accepts_source_poc": null,
-    "checked_at": ""
+    "checked_at": "",
+    "reason": "",
+    "evidence": {
+      "method": "",
+      "source": "",
+      "artifact": ""
+    }
   },
   "saturation": {
+    "status": "unassessed",
     "asset_resolved_count": null,
     "discloses_reports": null,
     "checked_at": "",
+    "reason": "",
+    "evidence": {
+      "method": "",
+      "source": "",
+      "artifact": ""
+    },
     "rationale": ""
   },
-  "disposition": "SELECTED",
-  "rotation_reason": ""
+  "decision": {
+    "disposition": "HOLD",
+    "gate": "scope",
+    "rotation_basis": null,
+    "alternative_target": "",
+    "missing_evidence": [
+      "Pull current scope and proof-policy evidence."
+    ],
+    "reason": "Target selection is not yet supported by live evidence.",
+    "decided_at": "",
+    "evidence": {
+      "method": "",
+      "source": "",
+      "artifact": ""
+    }
+  }
 }
