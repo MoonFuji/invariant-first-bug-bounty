@@ -22,34 +22,34 @@ Scope, eligibility, PoC policy, and payout are **live state**. Verify them at th
 - **PoC policy can auto-N/A a valid finding.** Some programs ban source-only analysis or require a running-instance / live PoC. A technically correct source-only finding is auto-N/A there regardless of quality. Read the PoC/testing rules first; if source-only proof is not accepted and you cannot reach a live instance within policy, the honest early verdict is `HOLD` or a rotation, not a submission.
 - **Advertised max ≠ real payout.** The headline maximum is not the typical award; some fields are known to misreport. Check average/recent bounty amounts — a low-signal or effectively-unpaid asset may not justify the hunt.
 - **Re-verify live.** Programs change scope, eligibility, and policy without notice. A cached scope file is a discovery hint, not authorization or eligibility — re-check the live program page before you clone or invest.
-- **Saturation is the dominant duplicate driver — assess dedup visibility before investing.** Duplicates, not bad findings, were the largest category of failed reports, and they were decided at target selection. A low `resolved_report_count` is **not** low saturation: read the program's disclosed-report pile *and authorized submission history for the same program and class* first (`GetMyHackerOneReports`). Repeated recent collisions against older unresolved originals indicate a crowded or slow-fix lane; reassess before investing in another finding from the same class. On a **non-disclosing** program you cannot dedup against the private pool at all: treat it as `private_duplicate_risk: high` and prefer a disclosing, low-volume target where novelty can be your edge (`references/methodology-and-targeting.md` §1).
+- **Assess dedup visibility before investing.** A low `resolved_report_count` is not proof of low saturation. Review the program's disclosed reports, public issues and pull requests, recent advisories, and the researcher's authorized submission history when available. Repeated collisions in the same program and root-cause class indicate a crowded or slow-fix lane. On a **non-disclosing** program, the private pool cannot be searched; record that uncertainty and prefer a disclosing, lower-volume target when the expected value is otherwise comparable (`references/methodology-and-targeting.md` §1).
 
 ## 1. HackerOne
-- **Trial-report cap (account-wide).** New / low-Signal accounts are capped on the number of reports they can have open at once (platform-defined). Once hit, further submissions are blocked until reports resolve or **Signal/Reputation rises** (subject to current platform rules). There is **NO legitimate bypass** — alternate accounts, out-of-band contact, or off-platform submission all violate HackerOne policy and risk a ban. If capped: stage hardened drafts locally and wait, or pivot to another platform (Bugcrowd/YWH). Do not try to route around it.
-- **"One draft per program" consumption.** Submitting your first report against a program can consume a shared draft and 404 the *second* staged report for the same program. Fix: after the first submit, **reload the program's submit page and re-stage** the next report from scratch. Expect this; don't panic at the 404.
+- **Account submission limits.** Limits vary with account and program state. Read the current platform response rather than assuming a fixed quota or reset interval. There is no legitimate bypass: do not use alternate accounts, out-of-band contact, or off-platform submission to evade a limit. Stage hardened drafts locally or choose another eligible program.
+- **Treat form state as live state.** A submission can invalidate another staged form. Reload the program's submit page and re-check every field and attachment before the next submission.
 - **Signal is the currency.** N/A and Spam closures lower Signal and tighten the cap; resolved reports raise it. This is the mechanical reason honest scoping (don't submit theoretical/OOS junk) is the scarcest asset — every bad report makes the next one harder to file.
 - **Weakness mapping:** pick the precise CWE; it routes triage and sets baseline severity. Provide a CVSS vector.
 
 ## 2. Bugcrowd
-- **Login:** `bugcrowd.com/user/sign_in` (Okta OAuth). Other paths (`/login`, `/h/auth/sign_in`) are wrong/404. The SPA renders blank to a snapshot — read the DOM via `browser_evaluate` rather than relying on the accessibility snapshot. **2FA is TOTP** — ask the account holder for the current code when prompted (don't assume; codes rotate ~30s).
-- **Identity verification (gov-ID KYC) gates SUBMISSION on many programs**, not just withdrawal. You can fill and **save a draft** before KYC, but the final submit is blocked until the account holder completes KYC. Don't burn time polishing if KYC isn't done — confirm it first. **The account holder completes KYC personally; never enter another person's government-ID data.**
+- **Login:** `bugcrowd.com/user/sign_in` (Okta OAuth). Other paths (`/login`, `/h/auth/sign_in`) are wrong/404. The SPA can render poorly in accessibility snapshots, so verify the actual DOM when necessary. **2FA is controlled by the account holder**; request a current code only at the visible authentication prompt.
+- **Identity verification can gate submission**, not just withdrawal. A draft may be saved before verification, but the account holder must complete KYC personally. Never enter, store, or transmit another person's government-ID data.
 - **Submission form fields:** `submission[terms_and_conditions]` checkbox is **required** (a "Terms and conditions must be accepted" error means you forgot it). Target is a `submission_target_id` SELECT (pick the in-scope asset). Weakness uses the **VRT typeahead** (`vrt-form-input`) — map precisely (e.g. `broken_access_control.privilege_escalation`). Other fields: `submission_caption` (title), `submission_description`, `submission_bug_url`.
 - **VRT → reward.** The VRT category maps to the program's reward table. The right category at honest severity pays correctly; inflating it gets the report downgraded on triage.
 
 ## 3. YesWeHack
-- **Payout/withdrawal gated by KYC + SCA.** The blocker observed was **NOT the bank** — bank-transfer availability varies by account and region — it was the **account-specific identity or authentication requirements**. If verification or authentication is unavailable, withdrawal may require platform support. Confirm the researcher's KYC + phone/SCA status *before* investing a hunt here.
-- Use the researcher's authorized YWH account; KYC may be incomplete — check before assuming a submission will pay out.
+- **Payout/withdrawal may be gated by KYC + SCA.** Verify the current identity, phone/SCA, and payout requirements for the researcher's account. If the platform rejects an otherwise valid verification step, use its support channel rather than attempting a workaround.
+- KYC may be incomplete — check before assuming a submission will pay out.
 - Programs include Sovereign Tech / EU-funded OSS scopes (good code-audit targets).
 
 ## 4. Intigriti
 - European platform, KYC + bank/IBAN payout. Strong for web/API and EU OSS scope. VDP vs paid programs are clearly marked — confirm cash before hunting. Same honest-scoping/Signal dynamics as the others.
 
 ## 5. huntr (AI/ML)
-- Focused on ML/AI OSS (model frameworks, serving, vector stores, agent libs). Lanes saturate fast — parallel review is common; confirm the specific package/sink isn't already a closed report before investing. Bounties are per-CVE-ish; novelty + a working PoC matter heavily. Insecure model deserialization (pickle-backed formats) is a recurring live lane.
+- Focused on ML/AI OSS (model frameworks, serving, vector stores, agent libraries). These targets attract parallel review; confirm that the specific package, root cause, and sink are not already covered before investing. Novelty and an executable PoC matter heavily. Insecure model deserialization remains a recurring class, not automatic evidence of a reportable bug.
 
 ## 6. Payout rails — get this right before you invest
-- A **bank transfer with an IBAN works almost everywhere** (availability is account- and region-specific). So the bank is rarely the blocker.
-- The real blockers are **identity/KYC** (Bugcrowd: can gate submission; YWH/Intigriti: gates withdrawal) and **SCA/phone-country** (YWH). Verify the *specific* gate for the *specific* platform before auditing — a perfect report you can't get paid for is wasted effort.
+- Do not generalize payout compatibility from another researcher, country, bank, or platform. Verify the current rail and account requirements directly.
+- Common blockers include **identity/KYC**, withdrawal verification, and SCA/phone requirements. Verify the *specific* gate for the *specific* platform before auditing — a perfect report you cannot submit or be paid for is wasted effort.
 - Prefer lanes whose rail the researcher has completed end-to-end over an untested one.
 
 ## 7. Safe-harbor & responsible-testing rules (all platforms)
@@ -58,5 +58,5 @@ These protect the researcher and preserve platform standing. They override hunti
 - **Test on a local clone / your own test accounts**, not production, wherever possible. Source-code analysis on a local checkout touches nothing of theirs.
 - **Never pivot with a live credential.** If you find a working prod secret, report the *exposure* — do not use the key to access prod data to "prove" it. Validate minimally and within policy, or not at all.
 - **No volumetric/DoS testing** on live systems (also usually OOS — see methodology §3.2).
-- **The account holder performs submissions and KYC**; ask for TOTP/2FA codes when needed; don't act outside the authorization explicitly provided for the current operation.
+- **The account holder performs submissions, identity verification, and authentication approvals.** Do not act outside the authorization explicitly provided for the current operation.
 - In the report, state honestly what was read-only / local / not exfiltrated — it builds triager trust and documents responsible conduct.

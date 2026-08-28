@@ -317,7 +317,7 @@ After every terminal candidate verdict:
 1. update the queue entry in place;
 2. preserve the candidate artifact and decision history;
 3. promote the next highest-value queued hypothesis;
-4. continue until the target’s high-value boundaries are covered or the user explicitly requested first-finding mode.
+4. continue until the target’s high-value boundaries are covered or the request explicitly limits the campaign to first-finding mode.
 
 ## Candidate verdicts
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Acceptance tests for validate-candidate.py (skill v0.4.1 / schema 5).
 
-Reproduces the two failure shapes that reached HackerOne as Informative:
+Reproduces two anonymized failure shapes that reached triage as Informative:
   - a terminal refutation marked `refuted` with no resolution attacking the
-    owned boundary (an anonymized model-routing case / case B);
+    owned boundary;
   - a `distinct` novelty claim backed only by `git log`, skipping the upstream
     issue/PR search (marcel #153 live dup; activeresource #358 by-design).
 

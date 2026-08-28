@@ -79,7 +79,7 @@ A freshly-published fix is a map to where the dangerous code is and what the aut
 - The patch fixes one *entry point* but the vulnerable helper has other callers (→ 2C variant analysis).
 - The patch is on `main` but **not released**, or released but **not back-ported** to LTS/older branches that are still in scope (n-day). A still-present sink at the released artifact's HEAD is reportable even if `main` was "fixed."
 
-**EV rule — incomplete-fix pays on *cold* CVEs and dupes on *hot* ones.** In observed program dynamics, every incomplete-fix of a *freshly-published* CVE/GHSA on a *marquee* component duplicated — the crowd swept it during embargo — while the only incomplete-fix still alive was of a five-year-old CVE on a peripheral, less-audited component. Incomplete-fix is EV-positive mainly on **old CVEs in cold, peripheral components**. Do not abandon the vein — re-aim it.
+**EV rule — incomplete-fix work is more contestable on fresh, prominent advisories.** Public patch diffs attract immediate parallel review, so a nearby payload or forgotten sibling is high-duplicate by default. Older advisories in peripheral components may be less crowded, but age alone proves nothing. Pursue an incomplete fix only when the candidate establishes a distinct semantic invariant, enforcement path, or affected asset.
 
 **But the load-bearing axis is variant *character*, not CVE-age** — score every incomplete-fix on a dup-risk ladder (a public advisory being fresh/marquee is a prior that *character* overrides in both directions):
 
