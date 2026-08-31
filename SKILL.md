@@ -35,12 +35,15 @@ cp assets/target.template.json <hunt-dir>/target.json
 python scripts/validate_hunt.py --stage target <hunt-dir>/target.json
 ```
 
-The ledger is the authoritative pre-candidate record. It stores:
+The ledger is the authoritative campaign record. It stores:
 
 - target identity, platform, route, asset type, exact repository/revision when applicable, and operating mode;
 - live scope status with a retrieval artifact;
 - the exact current proof-policy quote plus accepted proof types;
-- asset-level dedup visibility and saturation evidence;
+- truthful contestability evidence (`platform_count`, `public_history`, `private_unavailable`, or `not_applicable`); never turn unavailable private data into zero;
+- assessed prior outcomes and the coverage delta from earlier reviews;
+- an architecture boundary map and hypothesis lifecycle;
+- campaign mode (`first_finding`, `bounded`, or `exhaustive`) and stop condition;
 - a gate-aware decision: `SELECTED`, `ROTATED`, or `HOLD`.
 
 A rotation is a terminal target decision. It needs a structured basis and evidence, not “too hard,” remembered policy, or a guessed saturation label. When live evidence is unavailable, use `HOLD` and name what is missing.
@@ -55,6 +58,8 @@ TARGET HOLD
 
 Only a `SELECTED` ledger may produce candidates.
 
+All workflow ordering fields are timezone-bearing ISO-8601 timestamps. Future times fail. Mutable scope and proof-policy evidence must be refreshed when stale; pinned source revisions do not expire. Repeat the live scope and proof-policy preflight within seven days of the submission handoff.
+
 Scale the process to the target. Do not cargo-cult empty process blocks onto a toy target, and do not skip gates on a large one because the trace is tiring.
 
 ## 1. Start a candidate from the selected target
@@ -64,10 +69,11 @@ Generate the candidate so target identity cannot drift:
 ```bash
 python scripts/start_candidate.py \
   --target-ledger <hunt-dir>/target.json \
+  --hypothesis-id H-001 \
   --output <hunt-dir>/candidates/H-001.json
 ```
 
-The generated candidate carries `target_ledger_id` and copies the target identity, revision, mode, scope timestamp, and disclosure visibility. Do not hand-copy or silently replace those fields.
+The hypothesis must already be `investigating`. The candidate binds its campaign, stable target fingerprint, boundary, and hypothesis without copying the target-wide queue. A later refresh of mutable scope evidence does not invalidate an unchanged candidate; changing the asset, revision, route, or operating mode does.
 
 Validate every later stage through the bound wrapper:
 
@@ -78,7 +84,7 @@ python scripts/validate_hunt.py \
   <hunt-dir>/candidates/H-001.json
 ```
 
-Do not use `validate-candidate.py` alone as the final workflow. It is the candidate-core validator; it cannot see the target ledger, so target binding, rotation semantics, reviewer attestation, and final clean-review checks can be bypassed. Run `validate_hunt.py` for every stage.
+`validate-candidate.py` is import-only and fails on direct execution. Run `validate_hunt.py` for every stage.
 
 ## 2. Orient before anchoring
 
@@ -112,7 +118,7 @@ Creativity is a ranking signal, not an admission gate. A simple, clearly reachab
 
 Build the intent corpus lazily as you go: quote each documented or intentional security behavior you rely on with its source, and mark whether the finding matches intent. Keep it small — it exists to stop you killing a real bug as “documented behavior” from memory, not to document the target.
 
-Promote one hypothesis at a time into `model.security_invariant`.
+Promote one hypothesis at a time into `model.security_invariant`. Open hypotheses do not block a proven candidate from advancing; they block only a campaign-wide clean/exhausted conclusion.
 
 ## 4. Trace the invariant completely
 
@@ -190,9 +196,26 @@ Record every hedge the test surfaces in the candidate's `caveats` ledger — one
 ]
 ```
 
-Classification stays a judgment — no validator can smell an informative — but it must be explicit and auditable. A `load_bearing` classification mechanically forbids `REPORTABLE`: remove the hedge with evidence and record that evidence in the justification, narrow the claim to what survived, or decide `HOLD`/`KILL`. An empty ledger claims the draft contains no hedges; re-run the test before asserting it.
+Classification stays a judgment, but it must be explicit and auditable. **A load-bearing hedge controls the gate; an ordinary limitation controls scope or severity.** Remove a load-bearing hedge with evidence, narrow to the claim that survived, or decide `HOLD`/`KILL`. An empty ledger claims the draft contains no hedges; re-run the test before asserting it.
 
-Read `references/worked-examples.md` for calibrated examples, including real (anonymized) informatives whose own submitted hedges decided them.
+### Recover or narrow before killing a viable finding
+
+Record the highest proven rung in `claim_scope`:
+
+```text
+primitive → exact_executable → owned_boundary → demonstrated_impact → severity
+```
+
+Use `recovery.classification` to force the next honest action:
+
+- `RECOVER`: a safe, available check can repair the missing rung; name the next action and required artifact;
+- `NARROW`: a lower security-relevant claim is proven; record the unsupported extension and advance only the surviving claim;
+- `OPERATOR_REQUIRED`: the required evidence needs an account, platform, device, or environment not currently available;
+- `NONE`: no unresolved claim-recovery work remains.
+
+`RECOVER` and `OPERATOR_REQUIRED` cannot be `REPORTABLE`. `NARROW` may be reportable at `exact_executable` or higher when the demonstrated effect is itself in scope, security-relevant, reproducible, and novel. Do not keep a finished narrow finding in indefinite `HOLD` merely because a stronger deployment story remains unproven.
+
+Read `references/worked-examples.md` for calibrated synthetic examples, including cases where a load-bearing hedge defeats the claimed boundary.
 
 ## 7. Shape the proof with a self-run adversarial pass
 
@@ -216,6 +239,10 @@ Use the level required by the destination and claimed impact. Capture:
 - exit status and ordering when relevant;
 - at least one negative control;
 - production or destination relevance.
+
+`static-source-trace` is supporting evidence, not final proof. Store it in `proof.supporting_evidence_types`; the final proof type must establish the exact executable or authorized hosted path.
+
+Treat configuration as a claim precondition, not an automatic rejection. A target-shipped default or supported option may remain reportable when the target owns that condition, evidence records it, and the condition does not already grant the claimed effect. Operator-weakened and test-only configurations do not establish the supported product boundary.
 
 For a clean candidate, add a researcher-designed adversarial probe to `exhaustion.probes` with:
 
@@ -255,7 +282,7 @@ A clean public search does not prove novelty. On GitHub, issue and PR searches p
 
 In high-duplicate contexts, record a concrete collision differentiator. Do not submit merely because the defect is valid.
 
-## 11. Harden, then certify the finished candidate independently
+## 11. Harden, decide, then review the exact candidate bytes
 
 For a reportable candidate, harden the final claim and record `hardening.completed_at`:
 
@@ -263,23 +290,28 @@ For a reportable candidate, harden the final claim and record `hardening.complet
 - **reassess severity**: raise, hold, or lower it based on demonstrated evidence;
 - **deepen proof**: remove remaining ambiguity and improve controls.
 
-Then spawn a fresh-context reviewer and provide only the repository and finished candidate artifact, not the author’s prosecution narrative. The reviewer rewrites the review fields and records a structured attestation:
+Write the candidate decision after hardening. Then give a fresh-context reviewer only the repository and finished candidate file, not the author’s prosecution narrative. Store the result separately as `candidate-review.json`:
 
 ```json
 {
-  "mode": "independent_agent",
-  "id": "review-session-id",
-  "reviewed_at": "2026-08-20T04:00:00Z",
-  "artifact": "reviews/H-001.json",
-  "fresh_context": true
+  "schema_version": 1,
+  "review_type": "candidate",
+  "reviewer": {
+    "mode": "independent_agent",
+    "id": "review-session-id",
+    "reviewed_at": "2026-08-20T04:10:00Z",
+    "fresh_context": true
+  },
+  "verdict": "REPORTABLE|KILL|ROUTE_ELSEWHERE|NO_REPORTABLE_FINDING|NOT_READY|REJECTED",
+  "candidate": {"path": "candidate.json", "sha256": "..."}
 }
 ```
 
-`human` is also valid. The target-bound validator rejects a review timestamp earlier than `hardening.completed_at` or later than `decision.decided_at`. `self` never certifies a final `REPORTABLE` or `NO_REPORTABLE_FINDING`.
+`human` is also valid. Ordering is `hardening.completed_at <= decision.decided_at <= review.reviewed_at`. Editing the candidate invalidates the review digest. The digest identifies the exact bytes reviewed; it does not prove the reviewer’s independence or the truth of the finding.
 
-When independent review cannot run, set mode `owed` and stop at a **provisional decision**. Final report stage rejects `owed`; it never prints `REPORT READY`.
+Without the sidecar, decision stage remains provisional. Report stage requires an affirmative review bound to the exact candidate.
 
-### Final candidate-closure certification
+### Final candidate-closure review
 
 A final candidate-level `NO_REPORTABLE_FINDING` additionally requires `closure_review`:
 
@@ -292,7 +324,7 @@ Those last two arrays are continuation inputs, not permission to erase unfinishe
 
 ## 12. Decide, validate, and continue
 
-Candidate decision:
+After writing a terminal candidate decision, close its target hypothesis with the matching candidate ID, verdict, evidence path, timestamp, and SHA-256. Then validate the decision:
 
 ```bash
 python scripts/validate_hunt.py \
@@ -301,16 +333,46 @@ python scripts/validate_hunt.py \
   <hunt-dir>/candidates/H-001.json
 ```
 
-Final report readiness:
+Technical candidate readiness:
 
 ```bash
 python scripts/validate_hunt.py \
   --stage report \
   --target-ledger <hunt-dir>/target.json \
+  --candidate-review <hunt-dir>/reviews/H-001-candidate-review.json \
   <hunt-dir>/candidates/H-001.json
 ```
 
-A nonzero exit forbids drafting. Add evidence rather than editing assertions to satisfy the validator.
+Success prints `CANDIDATE REPORTABLE`. This means the technical candidate passed; it does not certify a report written later.
+
+Prepare the exact report bundle:
+
+```bash
+python scripts/start_submission.py \
+  --candidate <hunt-dir>/candidates/H-001.json \
+  --candidate-review <hunt-dir>/reviews/H-001-candidate-review.json \
+  --report <hunt-dir>/report.md \
+  --output <hunt-dir>/submission/submission.json \
+  --submission-id S-001 \
+  --title "..." --weakness "..." --severity high \
+  --cvss-score 8.1 --cvss-vector "..." \
+  --command "python3 reproduce.py" \
+  --attachment <hunt-dir>/proof.txt=proof-transcript
+```
+
+The bundle copies the affirmed candidate review, candidate, Markdown report, and attachments and records exact SHA-256 digests. Complete its live scope/proof-policy preflight and `prepared_at`, then copy `assets/submission-review.template.json` into the bundle and obtain a second fresh review over `submission.json`, `report.md`, the candidate, and every attachment. Validate the handoff:
+
+```bash
+python scripts/validate_hunt.py \
+  --stage submission \
+  --target-ledger <hunt-dir>/target.json \
+  --candidate <hunt-dir>/submission/candidate.json \
+  --candidate-review <hunt-dir>/submission/candidate-review.json \
+  --submission-review <hunt-dir>/submission/submission-review.json \
+  <hunt-dir>/submission/submission.json
+```
+
+Only an affirmative, digest-matched final review prints `SUBMISSION READY FOR FINAL CHECK`. Re-check the live platform form and attachments before the user submits. This status is not `SUBMITTED` and never authorizes an external click.
 
 After every terminal candidate verdict:
 
@@ -323,7 +385,7 @@ After every terminal candidate verdict:
 
 | Verdict | Meaning |
 |---|---|
-| `REPORTABLE` | Full trace, proof, route, novelty, hardening, and final independent review pass |
+| `REPORTABLE` | The bounded technical candidate cleared trace, proof, route, novelty, hardening, and exact-file candidate review |
 | `HOLD` | A named artifact or gate remains unresolved |
 | `KILL` | A gate is disproven, capability is unchanged, behavior is intended, or the candidate is covered/fixed |
 | `ROUTE_ELSEWHERE` | Another project or disclosure rail owns the fix |
@@ -372,7 +434,7 @@ Keep going when you notice:
 | Thought | Reality |
 |---|---|
 | “The ledger and paperwork take too long.” | The ledger is shorter than one wrong target. Select or rotate on evidence, then move. |
-| “It’s just a caveat footnote.” | A hedge you write about your own impact is a kill-condition, not a disclosure. |
+| “It’s just a caveat footnote.” | A load-bearing hedge controls the gate; an ordinary limitation controls scope or severity. |
 | “I generated many hypotheses, so coverage is good.” | Volume is not depth. The queue matters only when entries reach terminal evidence. |
 | “This KILL was hard-won; I did enough.” | Concluding costs the same evidence as reporting. The documented exhaustion is the verdict, not the feeling. |
 | “The validator passed, so the report is strong.” | Validators check structure and recorded evidence, not truth. Gates are floors, not certification. |
@@ -392,9 +454,13 @@ Keep going when you notice:
 | `references/platform-operations.md` | Scope, safe harbor, proof policy, KYC, payout, and platform operations |
 | `assets/target.template.json` | Gate-aware target selection/rotation ledger |
 | `assets/candidate.template.json` | One invariant’s durable evidence and decision state |
+| `assets/submission.template.json` | Exact report-and-attachment handoff manifest |
+| `assets/candidate-review.template.json` | Digest-bound candidate review sidecar |
+| `assets/submission-review.template.json` | Exact final bundle review sidecar |
 | `scripts/validate_hunt.py` | Authoritative target-bound validator |
 | `scripts/start_candidate.py` | Generate a candidate from a selected target ledger |
-| `scripts/validate-candidate.py` | Candidate-core validator used by `validate_hunt.py` |
+| `scripts/start_submission.py` | Create a self-contained report bundle from a reportable candidate |
+| `scripts/validate-candidate.py` | Import-only candidate core used by `validate_hunt.py` |
 | `scripts/recon-sweep.sh` | Secondary model-gated sink and variant triage |
 
 Stay within current scope and safe harbor. Use owned accounts and data, minimize impact, and never use exposed credentials or pivot into third-party systems.

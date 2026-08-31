@@ -4,6 +4,24 @@ This changelog records public behavior and schema changes only. Private program
 material, report identifiers, researcher account details, and undisclosed
 findings are intentionally excluded.
 
+## Unreleased — v0.8.0 candidate
+
+- Breaking: target schema 3 owns architecture boundaries, campaign mode,
+  hypothesis lifecycle, prior outcomes, coverage delta, and truthful
+  contestability; candidate schema 6 binds one hypothesis and stable target
+  fingerprint. Old records require deliberate manual review.
+- Added bounded claim/recovery states so repairable gaps remain actionable and
+  narrower exact findings can advance without unsupported extensions.
+- Made static source traces supporting evidence, distinguished shipped from
+  operator-weakened configuration, and enforced timezone-bearing timestamps.
+- Disabled direct execution of the candidate core; `validate_hunt.py` is the
+  only readiness entrypoint.
+- Separated `CANDIDATE REPORTABLE` from final submission readiness. Exact
+  candidate, Markdown report, manifest, and attachment bytes are reviewed via
+  SHA-256 sidecars before `SUBMISSION READY FOR FINAL CHECK`.
+- Added self-contained bundle creation and live submission-time scope and proof
+  policy preflight. The tooling never performs the external submission.
+
 ## v0.7.1 — reference drift fix (2026-08-21)
 
 - Updated remaining documentation examples to use the target-bound
@@ -27,7 +45,7 @@ findings are intentionally excluded.
 - Added an initial target ledger covering live scope, proof policy, saturation,
   and selection or rotation.
 - Distinguished load-bearing caveats from ordinary limitations.
-- Added anonymized, gate-calibrated worked examples.
+- Added gate-calibrated synthetic worked examples.
 
 ## v0.5.1 — final-review correctness (2026-08-20)
 
