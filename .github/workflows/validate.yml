@@ -22,9 +22,16 @@ jobs:
         run: python scripts/test_validate_candidate.py
       - name: Run bound target-ledger regression suite
         run: python scripts/test_validate_hunt.py
+      - name: Run campaign-state regression suite
+        run: python scripts/test_validate_campaign.py
+      - name: Run exact submission-bundle regression suite
+        run: python scripts/test_validate_submission.py
       - name: Run target-bound CLI smoke tests
         run: python scripts/test_validate_hunt_cli.py
       - name: Validate JSON templates
         run: |
           python -m json.tool assets/target.template.json >/dev/null
           python -m json.tool assets/candidate.template.json >/dev/null
+          python -m json.tool assets/submission.template.json >/dev/null
+          python -m json.tool assets/candidate-review.template.json >/dev/null
+          python -m json.tool assets/submission-review.template.json >/dev/null

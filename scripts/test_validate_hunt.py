@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression tests for target-bound validation and final certification."""
+"""Regression tests for target-bound validation and closure review."""
 from __future__ import annotations
 
 import copy
@@ -7,11 +7,18 @@ import json
 import subprocess
 import sys
 import tempfile
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import validate_hunt as vh  # noqa: E402
+
+NOW = datetime.now(UTC).replace(microsecond=0)
+
+
+def stamp(*, minutes_ago: int = 0, days_ago: int = 0) -> str:
+    return (NOW - timedelta(days=days_ago, minutes=minutes_ago)).isoformat().replace("+00:00", "Z")
 
 
 def evidence(name: str) -> dict[str, str]:
@@ -20,41 +27,71 @@ def evidence(name: str) -> dict[str, str]:
 
 def target() -> dict:
     return {
-        "schema_version": 2,
-        "target_id": "h1-elastic-fleet-8f9e6bb",
+        "schema_version": 3,
+        "target_id": "h1-example-server-8f9e6bb",
         "platform": "hackerone",
         "route_type": "bounty",
         "asset_type": "repository",
-        "program": "elastic",
-        "asset": "Fleet Server",
-        "repository": "github.com/elastic/fleet-server",
+        "program": "example",
+        "asset": "Example Server",
+        "repository": "github.com/example/server",
         "commit": "8f9e6bb",
         "operating_mode": "SOURCE_ONLY",
         "scope": {
-            "status": "eligible", "asset_identifier": "Fleet Server", "max_severity": "critical",
-            "checked_at": "2026-08-20T03:00:00Z", "reason": "", "evidence": evidence("scope"),
+            "status": "eligible", "asset_identifier": "Example Server", "max_severity": "critical",
+            "checked_at": stamp(minutes_ago=10), "reason": "", "evidence": evidence("scope"),
         },
         "proof_policy": {
             "status": "checked", "accepted_proof_types": ["executable-local-exact-path", "regression-test"],
+            "supporting_evidence_types": ["static-source-trace"],
             "quote": "Our code is open so use that to your advantage!",
-            "checked_at": "2026-08-20T03:02:00Z", "reason": "", "evidence": evidence("policy"),
+            "checked_at": stamp(minutes_ago=9), "reason": "", "evidence": evidence("policy"),
         },
-        "saturation": {
-            "status": "checked", "asset_resolved_count": 6, "discloses_reports": True,
-            "checked_at": "2026-08-20T03:04:00Z", "reason": "", "evidence": evidence("saturation"),
+        "contestability": {
+            "status": "checked", "basis": "platform_count", "count": 6, "discloses_reports": True,
+            "checked_at": stamp(minutes_ago=8), "reason": "", "evidence": evidence("contestability"),
             "rationale": "Six asset-level resolved reports and a searchable disclosure feed.",
+        },
+        "prior_outcomes": {
+            "status": "assessed", "summary": "No prior local outcomes for this exact target.",
+            "outcomes": [], "checked_at": stamp(minutes_ago=8), "evidence": evidence("prior-outcomes"),
+        },
+        "coverage_delta": {
+            "status": "assessed", "previously_audited": [], "new_or_uncovered": ["request boundary"],
+            "changed_since_last_review": [], "checked_at": stamp(minutes_ago=8),
+            "evidence": evidence("coverage"),
+        },
+        "architecture_boundary_map": {"boundaries": [{
+            "boundary_id": "B-001", "name": "request to tenant data",
+            "entrypoints": ["GET /records/{id}"], "trust_transition": "caller to tenant record",
+            "evidence": evidence("boundary"),
+        }]},
+        "hypothesis_lifecycle": [{
+            "hypothesis_id": "H-001", "boundary_id": "B-001",
+            "statement": "record lookup may omit tenant authorization",
+            "priority": "high", "status": "investigating",
+        }],
+        "campaign": {
+            "campaign_id": "C-001", "mode": "bounded", "status": "open",
+            "stop_condition": "Close the mapped request-boundary hypothesis.",
         },
         "decision": {
             "disposition": "SELECTED", "gate": "selection", "rotation_basis": None,
             "alternative_target": "", "missing_evidence": [], "evidence": evidence("selection"),
             "reason": "Eligible with compatible proof route and acceptable asset-level contestability.",
-            "decided_at": "2026-08-20T03:05:00Z",
+            "decided_at": stamp(minutes_ago=7),
         },
     }
 
 
 def candidate_binding(t: dict) -> dict:
     return {
+        "schema_version": 6,
+        "candidate_id": "candidate-001",
+        "campaign_id": t["campaign"]["campaign_id"],
+        "target_fingerprint": vh.target_fingerprint(t),
+        "boundary_id": "B-001",
+        "hypothesis_id": "H-001",
         "target_ledger_id": t["target_id"],
         "target": {
             "platform": t["platform"], "route_type": t["route_type"], "asset_type": t["asset_type"],
@@ -62,7 +99,7 @@ def candidate_binding(t: dict) -> dict:
             "commit": t["commit"], "operating_mode": t["operating_mode"],
             "scope_checked_at": t["scope"]["checked_at"],
             "scope_evidence": "live:scope (artifacts/scope.json)",
-            "saturation": {"discloses_reports": t["saturation"]["discloses_reports"]},
+            "contestability": {"discloses_reports": t["contestability"]["discloses_reports"]},
         },
     }
 
@@ -151,7 +188,7 @@ def test_live_evidence_and_asset_types() -> None:
     assert_reject(doc, "ISO-8601")
 
     doc = target()
-    doc["saturation"]["asset_resolved_count"] = -1
+    doc["contestability"]["count"] = -1
     assert_reject(doc, "non-negative integer")
 
     doc = target()
@@ -198,26 +235,70 @@ def test_candidate_binding_and_contract() -> None:
     vh.validate_report_target_contract(report, t, errors)
     assert any("proof.type" in error for error in errors), errors
 
+    private = target()
+    private["contestability"].update({
+        "basis": "private_unavailable", "count": None, "discloses_reports": False,
+        "reason": "The private report pool is not visible to researchers.",
+    })
+    report = candidate_binding(private)
+    report["proof"] = {"type": "executable-local-exact-path"}
+    report["route"] = {"type": "program"}
+    report["novelty"] = {"private_duplicate_risk": "low", "collision_differentiator": ""}
+    errors = []
+    vh.validate_report_target_contract(report, private, errors)
+    assert any("cannot support low" in error for error in errors), errors
 
-def test_reviewer_and_closure() -> None:
+    report["novelty"]["private_duplicate_risk"] = "medium"
+    errors = []
+    vh.validate_report_target_contract(report, private, errors)
+    assert any("collision_differentiator" in error for error in errors), errors
+
+    unknown_visibility = target()
+    unknown_visibility["contestability"].update({
+        "basis": "public_history", "count": None, "discloses_reports": None,
+    })
+    report = candidate_binding(unknown_visibility)
+    report.update({
+        "proof": {"type": "executable-local-exact-path"}, "route": {"type": "program"},
+        "novelty": {"private_duplicate_risk": "low", "collision_differentiator": ""},
+    })
+    errors = []
+    vh.validate_report_target_contract(report, unknown_visibility, errors)
+    assert any("cannot support low" in error for error in errors), errors
+
+    weak_claim = {
+        "proof": {"supporting_evidence_types": []},
+        "claim_scope": {
+            "highest_proven_rung": "none", "demonstrated_capability": "",
+            "demonstrated_impact": "", "severity_ceiling": "", "unsupported_extensions": [],
+        },
+        "recovery": {"classification": "NONE"},
+        "decision": {"verdict": "REPORTABLE"},
+    }
+    errors = []
+    vh.validate_claim_scope_and_recovery(weak_claim, errors)
+    assert any("exact_executable" in error for error in errors), errors
+    assert any("demonstrated_capability" in error for error in errors), errors
+
+    capped_target = target()
+    capped_target["scope"]["max_severity"] = "low"
+    over_ceiling = candidate_binding(capped_target)
+    over_ceiling.update({
+        "proof": {"type": "executable-local-exact-path"},
+        "route": {"type": "program"},
+        "claim_scope": {"severity_ceiling": "critical"},
+        "novelty": {"private_duplicate_risk": "medium", "collision_differentiator": "different invariant"},
+    })
+    errors = []
+    vh.validate_report_target_contract(over_ceiling, capped_target, errors)
+    assert any("exceeds target.scope.max_severity" in error for error in errors), errors
+
+
+def test_closure_review() -> None:
     doc = review_document()
     errors: list[str] = []
-    assert vh.validate_review_attestation(doc, errors, allow_owed=False) == "independent_agent"
     vh.validate_closure_review(doc, errors, provisional=False)
-    vh.validate_final_review_order(doc, errors)
     assert not errors, errors
-
-    bad = review_document()
-    bad["adversarial_review"]["reviewer"] = "fresh reviewer, trust me"
-    errors = []
-    vh.validate_review_attestation(bad, errors, allow_owed=False)
-    assert errors
-
-    bad = review_document()
-    bad["adversarial_review"]["reviewer"]["mode"] = "owed"
-    errors = []
-    vh.validate_review_attestation(bad, errors, allow_owed=False)
-    assert any("final report stage" in error for error in errors), errors
 
     bad = review_document()
     bad["adversarial_review"]["cold_verify"]["verdict"] = "UNCERTAIN"
@@ -230,13 +311,6 @@ def test_reviewer_and_closure() -> None:
     errors = []
     vh.validate_closure_review(bad, errors, provisional=False)
     assert any("closures_challenged" in error for error in errors), errors
-
-    report = review_document("REPORTABLE")
-    report["hardening"] = {"completed_at": "2026-08-20T04:01:00Z"}
-    errors = []
-    vh.validate_final_review_order(report, errors)
-    assert any("after hardening" in error for error in errors), errors
-
 
 def test_probe_warning() -> None:
     doc = review_document()
@@ -346,7 +420,7 @@ def test_start_candidate() -> None:
         assert proc.returncode == 0, proc.stderr
         candidate = json.loads(candidate_path.read_text(encoding="utf-8"))
         assert candidate["target_ledger_id"] == target()["target_id"]
-        assert candidate["target"]["asset"] == "Fleet Server"
+        assert candidate["target"]["asset"] == "Example Server"
         errors: list[str] = []
         vh.validate_candidate_target_binding(candidate, target(), errors)
         assert not errors, errors
@@ -357,7 +431,7 @@ def main() -> int:
         test_target_decisions,
         test_live_evidence_and_asset_types,
         test_candidate_binding_and_contract,
-        test_reviewer_and_closure,
+        test_closure_review,
         test_probe_warning,
         test_closure_coverage_warning,
         test_caveat_ledger,

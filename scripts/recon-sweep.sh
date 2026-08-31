@@ -5,8 +5,7 @@
 # model and invariant. It is a TRIAGE pass, not a verifier. Every hit must attach to
 # the selected invariant and be traced to a reachable effect.
 #
-# Usage:   recon-sweep.sh --candidate candidate.json <repo-dir> [output-dir]
-# Example: recon-sweep.sh --candidate ./hunt/candidate.json ./klaw_hunt /tmp/klaw-recon
+# Usage:   recon-sweep.sh --target-ledger target.json --candidate candidate.json <repo-dir> [output-dir]
 #
 # Degrades gracefully: uses ripgrep if present (falls back to grep -r), and runs
 # semgrep/gitleaks/trufflehog only if they're installed. Read-only; writes only to
@@ -15,19 +14,20 @@
 set -uo pipefail
 
 usage() {
-  echo "usage: recon-sweep.sh --candidate candidate.json <repo-dir> [output-dir]" >&2
+  echo "usage: recon-sweep.sh --target-ledger target.json --candidate candidate.json <repo-dir> [output-dir]" >&2
 }
 
-if [ "$#" -lt 3 ] || [ "$1" != "--candidate" ]; then
+if [ "$#" -lt 5 ] || [ "$1" != "--target-ledger" ] || [ "$3" != "--candidate" ]; then
   usage
   exit 2
 fi
 
-CANDIDATE="$2"
-REPO="$3"
-OUT="${4:-./recon-$(basename "$REPO")}"
+TARGET_LEDGER="$2"
+CANDIDATE="$4"
+REPO="$5"
+OUT="${6:-./recon-$(basename "$REPO")}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-VALIDATOR="$SCRIPT_DIR/validate-candidate.py"
+VALIDATOR="$SCRIPT_DIR/validate_hunt.py"
 
 if [ ! -d "$REPO" ]; then
   echo "[error] repository directory not found: $REPO" >&2
@@ -43,7 +43,7 @@ else
   exit 2
 fi
 
-if ! "$PYTHON" "$VALIDATOR" --stage model "$CANDIDATE"; then
+if ! "$PYTHON" "$VALIDATOR" --stage model --target-ledger "$TARGET_LEDGER" "$CANDIDATE"; then
   echo "[error] candidate is not model-ready; fix the listed fields before broad recon" >&2
   exit 2
 fi

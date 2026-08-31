@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Validate durable bug-bounty candidate state before recon or reporting."""
 
-import argparse
-import json
 import sys
-from pathlib import Path
+
+from hunt_validation.common import require_timestamp
 
 
 VERDICTS = {
@@ -30,7 +29,7 @@ GATES = {
 OPERATING_MODES = {"SOURCE_ONLY", "PROGRAM_HOSTED"}
 TARGET_DISPOSITIONS = {"SELECTED", "ROTATED"}
 REFUTATION_RESULTS = {"refuted", "confirmed", "unresolved"}
-SUPPORTED_SCHEMA_VERSIONS = {3, 4, 5}
+SUPPORTED_SCHEMA_VERSIONS = {3, 4, 5, 6}
 # Schema 5 process-evidence blocks (ideation + adversarial self-review). The
 # report-stage gates below apply only when schema_version >= 5; legacy schema-3/4
 # candidates still validate at non-report stages, matching the skill's
@@ -38,7 +37,14 @@ SUPPORTED_SCHEMA_VERSIONS = {3, 4, 5}
 INTENT_MATCHES = {"none", "intentional", "acknowledged"}
 COLD_VERIFY_VERDICTS = {"CONFIRMED", "DISPROVED", "UNCERTAIN"}
 SUBCLAIM_STATUSES = {"supported", "unsupported"}
-CONFIG_DEPENDENCIES = {"none", "default_only", "requires_insecure_config"}
+CONFIG_DEPENDENCIES = {
+    "none",
+    "program_shipped_default",
+    "supported_option",
+    "operator_weakened",
+    "test_only",
+    "unknown",
+}
 # A refutation's `kind`. Every kind except non_terminal invalidates the
 # candidate's own security model: it says the objection is not an ordinary
 # counter-argument but a statement that the target does not own the boundary.
@@ -187,7 +193,7 @@ def require_evidence(obj, path, errors):
 
 def validate_common(document, errors):
     if value_at(document, "schema_version") not in SUPPORTED_SCHEMA_VERSIONS:
-        errors.append("schema_version must be 3, 4, or 5")
+        errors.append("schema_version must be 3, 4, 5, or 6")
 
     verdict = value_at(document, "decision.verdict")
     gate = value_at(document, "decision.gate")
@@ -723,7 +729,7 @@ def validate_saturation_present(document, errors):
     at selection, not at proof, so target.saturation.discloses_reports is owed by the model gate --
     a swarmed / non-disclosing program should be confronted before hours are invested in a trace."""
     version = value_at(document, "schema_version")
-    if not isinstance(version, int) or version < 5:
+    if version != 5:
         return
     sat = value_at(document, "target.saturation")
     if not isinstance(sat, dict) or not isinstance(sat.get("discloses_reports"), bool):
@@ -741,7 +747,7 @@ def validate_saturation_for_report(document, errors):
     which gives zero public dedup signal -- carry high private-duplicate risk by construction.
     """
     version = value_at(document, "schema_version")
-    if not isinstance(version, int) or version < 5:
+    if version != 5:
         return
     sat = value_at(document, "target.saturation")
     if not isinstance(sat, dict):
@@ -938,28 +944,52 @@ def validate_schema5_report_gates(document, errors):
                     "citation that grounds it -- prose alone does not clear the pattern"
                 )
 
-    # The demonstrated-impact bar for the informative class: a finding that manifests only in a
-    # default/dev config a real deployment overrides, or that needs an insecure config no real
-    # deployment uses (operator config, not attacker input), is not reportable. Lab-reproduced
-    # source-only findings are config_dependency "none" and unaffected.
+    # Configuration is a claim precondition, not an automatic verdict. A target-shipped default or
+    # supported option can remain reportable when evidence shows the product owns that condition and
+    # the report stays within it. Operator weakening and test-only behavior do not establish the
+    # supported product boundary.
     config_dep = value_at(document, "proof.config_dependency")
-    if config_dep not in CONFIG_DEPENDENCIES:
+    if version >= 6:
+        if not isinstance(config_dep, dict):
+            errors.append("schema 6 proof.config_dependency must be an object")
+        else:
+            kind = config_dep.get("kind")
+            if kind not in CONFIG_DEPENDENCIES:
+                errors.append(
+                    "proof.config_dependency.kind must be one of "
+                    + ", ".join(sorted(CONFIG_DEPENDENCIES))
+                )
+            if kind in {"program_shipped_default", "supported_option"}:
+                evidence = config_dep.get("evidence")
+                if not isinstance(evidence, str) or not evidence.strip():
+                    errors.append(f"proof.config_dependency {kind} requires shipped-config evidence")
+                if config_dep.get("precondition_grants_effect") is not False:
+                    errors.append(
+                        f"proof.config_dependency {kind} is reportable only when the precondition "
+                        "does not itself grant the claimed effect"
+                    )
+            elif kind in {"operator_weakened", "test_only"}:
+                errors.append(
+                    f"proof.config_dependency {kind} forbids REPORTABLE at the supported product "
+                    "boundary; narrow to a target-shipped condition or decide HOLD/KILL"
+                )
+            elif kind == "unknown":
+                errors.append("REPORTABLE requires proof.config_dependency.kind to be assessed")
+    elif config_dep not in {"none", "default_only", "requires_insecure_config"}:
         errors.append(
-            "REPORTABLE requires proof.config_dependency assessed (one of "
-            + ", ".join(sorted(CONFIG_DEPENDENCIES)) + ")"
+            "REPORTABLE requires proof.config_dependency assessed (one of default_only, none, "
+            "requires_insecure_config)"
         )
     elif config_dep != "none":
         errors.append(
-            f"proof.config_dependency {config_dep} forbids REPORTABLE: the effect appears only in a "
-            "default/dev config a real deployment overrides, or requires an insecure config no real "
-            "deployment uses (operator config is not attacker input) -- HOLD or KILL, not report"
+            f"proof.config_dependency {config_dep} forbids REPORTABLE under the legacy schema"
         )
 
     # Self-certification is banned for a REPORTABLE: self-review over-rates its own findings (measured
     # -- even a genuine self red-team over-rated reachability). Require an independent reviewer, or an
     # explicit "owed" that hands the finding to the user as provisional.
     reviewer = review.get("reviewer") if isinstance(review, dict) else None
-    if reviewer in (None, "", "self"):
+    if version == 5 and reviewer in (None, "", "self"):
         errors.append(
             "REPORTABLE may not be self-certified: adversarial_review.reviewer must name an independent "
             "reviewer (a fresh-context agent given only the artifact), or be 'owed' and handed to the "
@@ -974,12 +1004,13 @@ def validate_schema5_report_gates(document, errors):
             "radius, reassess severity on the evidence, and deepen the PoC before submitting"
         )
     else:
-        for field in ("widened_radius", "escalated_severity", "deepened_poc"):
+        severity_field = "severity_reassessment" if version >= 6 else "escalated_severity"
+        for field in ("widened_radius", severity_field, "deepened_poc"):
             value = hardening.get(field)
             if not isinstance(value, str) or not value.strip():
                 errors.append(
                     f"hardening.{field} must record what the pass attempted (or an explicit 'n/a: <reason>'); "
-                    "escalated_severity records a severity re-assessment -- raise it only on evidence, "
+                    "severity_reassessment records a neutral severity review -- raise it only on evidence, "
                     "and hold or lower it when the evidence does not support a higher score"
                 )
 
@@ -995,21 +1026,22 @@ def collect_warnings(document):
     if not isinstance(version, int) or version < 5:
         return warnings
 
-    queue = value_at(document, "hypothesis_queue")
-    if not isinstance(queue, list) or not queue:
-        warnings.append(
-            "hypothesis_queue is empty; on a large or unfamiliar target run one ideation pass "
-            "(references/hypothesis-generation.md) and rank the surface before concluding it is covered"
-        )
-    else:
-        for index, item in enumerate(queue):
-            signal = item.get("creativity_signal") if isinstance(item, dict) else None
-            if not isinstance(signal, str) or not signal.strip():
-                warnings.append(
-                    f"hypothesis_queue[{index}] has no creativity_signal; weigh its novelty and "
-                    "duplicate risk -- an obvious sink can still be reachable and worth tracing, but "
-                    "is likelier already reported, so rank it by expected value, do not auto-drop it"
-                )
+    if version == 5:
+        queue = value_at(document, "hypothesis_queue")
+        if not isinstance(queue, list) or not queue:
+            warnings.append(
+                "hypothesis_queue is empty; on a large or unfamiliar target run one ideation pass "
+                "(references/hypothesis-generation.md) and rank the surface before concluding it is covered"
+            )
+        else:
+            for index, item in enumerate(queue):
+                signal = item.get("creativity_signal") if isinstance(item, dict) else None
+                if not isinstance(signal, str) or not signal.strip():
+                    warnings.append(
+                        f"hypothesis_queue[{index}] has no creativity_signal; weigh its novelty and "
+                        "duplicate risk -- an obvious sink can still be reachable and worth tracing, but "
+                        "is likelier already reported, so rank it by expected value, do not auto-drop it"
+                    )
 
     if value_at(document, "decision.verdict") == "REPORTABLE":
         sweep = value_at(document, "variant_sweep")
@@ -1155,7 +1187,11 @@ def validate_decision(document, errors):
     else:
         validate_common(document, errors)
 
-    require_text(document, "decision.decided_at", errors)
+    version = value_at(document, "schema_version")
+    if isinstance(version, int) and version >= 6:
+        require_timestamp(value_at(document, "decision.decided_at"), "decision.decided_at", errors)
+    else:
+        require_text(document, "decision.decided_at", errors)
 
     # A confirmed terminal refutation must land at the gate its kind implies.
     rv = refutation_view(document)
@@ -1317,8 +1353,7 @@ def validate_target(document, errors):
             errors.append(
                 "poc_policy.quote must be a verbatim line from the live program policy on what proof is "
                 "accepted (source-only? running instance? auto-N/A?) -- never a paraphrase. A target "
-                "skipped as 'source-only is N/A' owes the quoted line that says so; matomo was wrongly "
-                "killed on a paraphrase the live policy contradicted"
+                "skipped as 'source-only is N/A' owes the quoted line that says so"
             )
         if not isinstance(poc.get("accepts_source_poc"), bool):
             errors.append(
@@ -1360,73 +1395,12 @@ def validate_target(document, errors):
             )
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Validate a bug-bounty candidate before recon or report writing."
-    )
-    parser.add_argument("candidate", type=Path, help="Path to candidate JSON")
-    parser.add_argument(
-        "--stage",
-        choices=("target", "model", "decision", "report"),
-        required=True,
-        help="Validation strictness",
-    )
-    return parser.parse_args()
-
-
 def main():
-    args = parse_args()
-    try:
-        document = json.loads(args.candidate.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        print(f"ERROR: candidate file not found: {args.candidate}", file=sys.stderr)
-        return 2
-    except json.JSONDecodeError as error:
-        print(f"ERROR: invalid JSON: {error}", file=sys.stderr)
-        return 2
-    except OSError as error:
-        print(f"ERROR: cannot read candidate: {error}", file=sys.stderr)
-        return 2
-
-    if not isinstance(document, dict):
-        print("ERROR: candidate root must be a JSON object", file=sys.stderr)
-        return 2
-
-    errors = []
-    if args.stage == "target":
-        validate_target(document, errors)
-    elif args.stage == "model":
-        validate_model(document, errors)
-    elif args.stage == "decision":
-        validate_decision(document, errors)
-    else:
-        validate_report(document, errors)
-
-    if errors:
-        for error in dict.fromkeys(errors):
-            print(f"ERROR: {error}", file=sys.stderr)
-        return 2
-
-    for warning in dict.fromkeys(collect_warnings(document)):
-        print(f"WARN: {warning}", file=sys.stderr)
-
-    labels = {
-        "target": "TARGET READY",
-        "model": "MODEL READY",
-        "decision": "DECISION READY",
-        "report": "REPORT READY",
-    }
-    label = labels[args.stage]
-    # An owed independent review is not a final verdict: the candidate is structurally valid but
-    # not yet certified. Print a distinct provisional label so exit 0 does not read as "submit" --
-    # the report/decision is provisional until an independent agent (or the user) verifies it.
-    if value_at(document, "adversarial_review.reviewer") == "owed":
-        label = {
-            "report": "REPORT PROVISIONAL -- INDEPENDENT REVIEW OWED",
-            "decision": "DECISION PROVISIONAL -- INDEPENDENT REVIEW OWED",
-        }.get(args.stage, label)
-    print(f"{label}: {args.candidate}")
-    return 0
+    print(
+        "ERROR: validate-candidate.py is import-only; use scripts/validate_hunt.py",
+        file=sys.stderr,
+    )
+    return 2
 
 
 if __name__ == "__main__":

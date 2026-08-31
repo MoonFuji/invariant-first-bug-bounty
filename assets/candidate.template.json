@@ -1,9 +1,12 @@
 {
-  "schema_version": 5,
+  "schema_version": 6,
   "candidate_id": "",
+  "campaign_id": "",
+  "target_fingerprint": "",
+  "boundary_id": "",
+  "hypothesis_id": "",
   "target_ledger_id": "",
   "decision_history": [],
-  "hypothesis_queue": [],
   "intent_corpus": {
     "checked_at": "",
     "sources": [],
@@ -62,7 +65,7 @@
     "status": "none",
     "reviewer": "self",
     "widened_radius": "",
-    "escalated_severity": "",
+    "severity_reassessment": "",
     "deepened_poc": "",
     "completed_at": ""
   },
@@ -83,12 +86,7 @@
     "repository": "",
     "commit": "",
     "scope_evidence": "",
-    "scope_checked_at": "",
-    "saturation": {
-      "reports_last_90d": null,
-      "discloses_reports": null,
-      "hot_cluster": null
-    }
+    "scope_checked_at": ""
   },
   "model": {
     "principals": [],
@@ -131,7 +129,12 @@
     "observed_result": "",
     "negative_controls": [],
     "production_relevance": "",
-    "config_dependency": "unknown"
+    "supporting_evidence_types": [],
+    "config_dependency": {
+      "kind": "unknown",
+      "evidence": "",
+      "precondition_grants_effect": null
+    }
   },
   "route": {
     "owning_project": "",
@@ -253,6 +256,20 @@
         "artifact": ""
       }
     }
+  },
+  "claim_scope": {
+    "highest_proven_rung": "none",
+    "demonstrated_capability": "",
+    "demonstrated_impact": "",
+    "unsupported_extensions": [],
+    "severity_ceiling": ""
+  },
+  "recovery": {
+    "classification": "RECOVER",
+    "failed_rung": "primitive",
+    "next_action": "Complete the first safe evidence task.",
+    "required_artifact": "",
+    "surviving_claim": ""
   },
   "decision": {
     "verdict": "HOLD",

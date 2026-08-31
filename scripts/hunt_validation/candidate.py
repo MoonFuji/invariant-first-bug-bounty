@@ -1,4 +1,4 @@
-"""Candidate binding, reviewer attestation, and clean-review validation."""
+"""Candidate binding, claim scope, and clean-review validation."""
 from __future__ import annotations
 
 import importlib.util
@@ -6,12 +6,124 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
-from .common import ValidationError, normalized, parse_iso, require_iso, require_text, text
-from .target import canonical_target_value, scope_evidence_summary
+from .common import (
+    ValidationError,
+    normalized,
+    require_not_future,
+    require_ordered,
+    require_text,
+    require_timestamp,
+    text,
+)
+from .target import canonical_target_value, scope_evidence_summary, target_fingerprint
 
-FINAL_REVIEW_MODES = {"independent_agent", "human"}
-REVIEW_MODES = FINAL_REVIEW_MODES | {"self", "owed"}
 CAVEAT_CLASSIFICATIONS = {"load_bearing", "ordinary"}
+CANDIDATE_SCHEMA_VERSION = 6
+RECOVERY_CLASSES = {"NONE", "RECOVER", "NARROW", "OPERATOR_REQUIRED"}
+CLAIM_RUNGS = (
+    "none",
+    "primitive",
+    "exact_executable",
+    "owned_boundary",
+    "demonstrated_impact",
+    "severity",
+)
+SEVERITY_RANK = {"informational": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+
+
+def validate_candidate_schema(document: dict[str, Any], errors: list[str]) -> None:
+    if document.get("schema_version") != CANDIDATE_SCHEMA_VERSION:
+        errors.append(
+            f"candidate.schema_version must be {CANDIDATE_SCHEMA_VERSION}; "
+            "older candidates require deliberate review and manual upgrade"
+        )
+    for key in (
+        "candidate_id",
+        "campaign_id",
+        "target_fingerprint",
+        "boundary_id",
+        "hypothesis_id",
+    ):
+        require_text(document, key, "candidate", errors)
+
+
+def validate_claim_scope_and_recovery(document: dict[str, Any], errors: list[str]) -> None:
+    proof = document.get("proof") if isinstance(document.get("proof"), dict) else {}
+    supporting = proof.get("supporting_evidence_types")
+    if not isinstance(supporting, list):
+        errors.append("proof.supporting_evidence_types must be an array")
+    elif any(item != "static-source-trace" for item in supporting):
+        errors.append("proof.supporting_evidence_types only accepts static-source-trace")
+    if proof.get("type") == "static-source-trace":
+        errors.append(
+            "proof.type static-source-trace cannot be final proof; record it as supporting evidence "
+            "and prove the exact executable or hosted path"
+        )
+
+    claim = document.get("claim_scope")
+    if not isinstance(claim, dict):
+        errors.append("candidate.claim_scope must be an object")
+        return
+    rung = claim.get("highest_proven_rung")
+    if rung not in CLAIM_RUNGS:
+        errors.append("claim_scope.highest_proven_rung must be one of " + ", ".join(CLAIM_RUNGS))
+    for key in ("demonstrated_capability", "demonstrated_impact", "severity_ceiling"):
+        if not isinstance(claim.get(key), str):
+            errors.append(f"claim_scope.{key} must be a string")
+    unsupported = claim.get("unsupported_extensions")
+    if not isinstance(unsupported, list) or any(not text(item) for item in unsupported):
+        errors.append("claim_scope.unsupported_extensions must be an array of non-empty strings")
+
+    recovery = document.get("recovery")
+    if not isinstance(recovery, dict):
+        errors.append("candidate.recovery must be an object")
+        return
+    classification = recovery.get("classification")
+    if classification not in RECOVERY_CLASSES:
+        errors.append("recovery.classification must be one of " + ", ".join(sorted(RECOVERY_CLASSES)))
+        return
+    verdict = document.get("decision", {}).get("verdict") if isinstance(document.get("decision"), dict) else None
+    if verdict == "REPORTABLE":
+        for key in ("demonstrated_capability", "demonstrated_impact"):
+            if not text(claim.get(key)):
+                errors.append(f"REPORTABLE requires non-empty claim_scope.{key}")
+        if claim.get("severity_ceiling") not in SEVERITY_RANK:
+            errors.append(
+                "REPORTABLE requires claim_scope.severity_ceiling informational, low, medium, high, or critical"
+            )
+        if rung not in CLAIM_RUNGS[2:]:
+            errors.append("REPORTABLE requires at least an exact_executable highest_proven_rung")
+    if classification == "NONE":
+        return
+    failed_rung = recovery.get("failed_rung")
+    if failed_rung not in CLAIM_RUNGS[1:]:
+        errors.append("recovery.failed_rung must identify a concrete claim rung")
+    require_text(recovery, "next_action", "recovery", errors)
+    if classification in {"RECOVER", "OPERATOR_REQUIRED"}:
+        require_text(recovery, "required_artifact", "recovery", errors)
+        if verdict == "REPORTABLE":
+            errors.append(f"recovery.classification {classification} forbids REPORTABLE until resolved")
+    elif classification == "NARROW":
+        require_text(recovery, "surviving_claim", "recovery", errors)
+        if not unsupported:
+            errors.append("NARROW requires claim_scope.unsupported_extensions to record dropped claims")
+        if rung in {"none", "primitive"} and verdict == "REPORTABLE":
+            errors.append("NARROW cannot be REPORTABLE without at least an exact executable claim")
+
+
+def validate_candidate_timestamps(document: dict[str, Any], errors: list[str]) -> None:
+    decision = document.get("decision") if isinstance(document.get("decision"), dict) else {}
+    require_not_future(decision.get("decided_at"), "decision.decided_at", errors)
+    hardening = document.get("hardening") if isinstance(document.get("hardening"), dict) else {}
+    if hardening.get("status") == "done":
+        require_not_future(hardening.get("completed_at"), "hardening.completed_at", errors)
+        require_ordered(
+            hardening.get("completed_at"),
+            "hardening.completed_at",
+            decision.get("decided_at"),
+            "decision.decided_at",
+            errors,
+        )
 
 
 def load_candidate_validator() -> ModuleType:
@@ -25,48 +137,6 @@ def load_candidate_validator() -> ModuleType:
     except (OSError, ImportError, SyntaxError) as exc:
         raise ValidationError(f"cannot load candidate validator {path}: {exc}") from exc
     return module
-
-
-def review_attestation(document: dict[str, Any]) -> dict[str, Any] | None:
-    review = document.get("adversarial_review")
-    if not isinstance(review, dict):
-        return None
-    reviewer = review.get("reviewer")
-    if isinstance(reviewer, dict):
-        return reviewer
-    # Legacy string form is normalized here so old candidates fail clearly or
-    # remain provisional instead of silently passing as independent.
-    if isinstance(reviewer, str):
-        mode = normalized(reviewer)
-        return {"mode": mode, "id": reviewer.strip()}
-    return None
-
-
-def validate_review_attestation(
-    document: dict[str, Any],
-    errors: list[str],
-    *,
-    allow_owed: bool,
-) -> str:
-    reviewer = review_attestation(document)
-    if reviewer is None:
-        errors.append("adversarial_review.reviewer must be a structured review attestation")
-        return ""
-    mode = normalized(reviewer.get("mode"))
-    if mode not in REVIEW_MODES:
-        errors.append("adversarial_review.reviewer.mode must be self, owed, independent_agent, or human")
-        return mode
-    if mode in FINAL_REVIEW_MODES:
-        require_text(reviewer, "id", "adversarial_review.reviewer", errors)
-        require_iso(reviewer.get("reviewed_at"), "adversarial_review.reviewer.reviewed_at", errors)
-        require_text(reviewer, "artifact", "adversarial_review.reviewer", errors)
-        if mode == "independent_agent" and reviewer.get("fresh_context") is not True:
-            errors.append("independent_agent review requires reviewer.fresh_context true")
-    elif mode == "self":
-        errors.append("REPORTABLE/NO_REPORTABLE_FINDING may not be self-certified")
-    elif mode == "owed" and not allow_owed:
-        errors.append("final report stage requires completed independent review; use decision stage for provisional output")
-    return mode
 
 
 def validate_caveat_ledger(document: dict[str, Any], errors: list[str]) -> None:
@@ -248,6 +318,40 @@ def validate_candidate_target_binding(
     if candidate.get("target_ledger_id") != target.get("target_id"):
         errors.append("candidate.target_ledger_id must match target.target_id")
 
+    version = candidate.get("schema_version")
+    if version == CANDIDATE_SCHEMA_VERSION:
+        campaign = target.get("campaign") if isinstance(target.get("campaign"), dict) else {}
+        if candidate.get("campaign_id") != campaign.get("campaign_id"):
+            errors.append("candidate.campaign_id must match target.campaign.campaign_id")
+        if candidate.get("target_fingerprint") != target_fingerprint(target):
+            errors.append(
+                "candidate.target_fingerprint does not match the stable target identity; "
+                "create a new candidate when the asset, revision, route, or operating mode changes"
+            )
+        lifecycle = target.get("hypothesis_lifecycle")
+        matches = [
+            hypothesis for hypothesis in lifecycle
+            if isinstance(hypothesis, dict)
+            and hypothesis.get("hypothesis_id") == candidate.get("hypothesis_id")
+        ] if isinstance(lifecycle, list) else []
+        if len(matches) != 1:
+            errors.append("candidate.hypothesis_id must identify exactly one target hypothesis")
+        else:
+            hypothesis = matches[0]
+            if hypothesis.get("boundary_id") != candidate.get("boundary_id"):
+                errors.append("candidate.boundary_id must match the bound target hypothesis")
+            if hypothesis.get("status") not in {"investigating", "closed"}:
+                errors.append(
+                    "candidate hypothesis must be investigating or closed; "
+                    "queued or parked hypotheses cannot validate this candidate"
+                )
+            if hypothesis.get("status") == "closed":
+                if hypothesis.get("candidate_id") != candidate.get("candidate_id"):
+                    errors.append("closed hypothesis candidate_id must match the candidate")
+                verdict = candidate.get("decision", {}).get("verdict") if isinstance(candidate.get("decision"), dict) else None
+                if hypothesis.get("terminal_verdict") != verdict:
+                    errors.append("closed hypothesis terminal_verdict must match candidate.decision.verdict")
+
     ctarget = candidate.get("target") if isinstance(candidate.get("target"), dict) else {}
     for candidate_key, target_key in (
         ("platform", "platform"),
@@ -262,35 +366,22 @@ def validate_candidate_target_binding(
         if ctarget.get(candidate_key) != canonical_target_value(target, target_key):
             errors.append(f"candidate.target.{candidate_key} must match target ledger {target_key}")
 
-    scope = target.get("scope") if isinstance(target.get("scope"), dict) else {}
-    if ctarget.get("scope_checked_at") != scope.get("checked_at"):
-        errors.append("candidate.target.scope_checked_at must match target.scope.checked_at")
-    expected_scope_evidence = scope_evidence_summary(target)
-    if ctarget.get("scope_evidence") != expected_scope_evidence:
-        errors.append("candidate.target.scope_evidence must identify the target ledger scope artifact")
+    # Schema 6 binds the immutable identity above. Mutable scope and
+    # contestability evidence may be refreshed in the target ledger without
+    # invalidating a technically unchanged candidate. Legacy records retain
+    # their exact copied-evidence checks when these helpers are imported.
+    if version != CANDIDATE_SCHEMA_VERSION:
+        scope = target.get("scope") if isinstance(target.get("scope"), dict) else {}
+        if ctarget.get("scope_checked_at") != scope.get("checked_at"):
+            errors.append("candidate.target.scope_checked_at must match target.scope.checked_at")
+        expected_scope_evidence = scope_evidence_summary(target)
+        if ctarget.get("scope_evidence") != expected_scope_evidence:
+            errors.append("candidate.target.scope_evidence must identify the target ledger scope artifact")
 
-    csat = ctarget.get("saturation") if isinstance(ctarget.get("saturation"), dict) else {}
-    tsat = target.get("saturation") if isinstance(target.get("saturation"), dict) else {}
-    if tsat.get("status") == "checked" and csat.get("discloses_reports") != tsat.get("discloses_reports"):
-        errors.append("candidate.target.saturation.discloses_reports must match the target ledger")
-
-
-def validate_final_review_order(document: dict[str, Any], errors: list[str]) -> None:
-    """Catch obvious review-before-final-artifact and post-review decision drift."""
-    reviewer = review_attestation(document)
-    if not isinstance(reviewer, dict) or normalized(reviewer.get("mode")) not in FINAL_REVIEW_MODES:
-        return
-    reviewed_at = parse_iso(reviewer.get("reviewed_at"))
-    decided_at = parse_iso(document.get("decision", {}).get("decided_at") if isinstance(document.get("decision"), dict) else None)
-    if reviewed_at is not None and decided_at is not None and reviewed_at > decided_at:
-        errors.append("adversarial review must be completed before decision.decided_at")
-
-    if document.get("decision", {}).get("verdict") == "REPORTABLE":
-        hardening = document.get("hardening") if isinstance(document.get("hardening"), dict) else {}
-        require_iso(hardening.get("completed_at"), "hardening.completed_at", errors)
-        hardened_at = parse_iso(hardening.get("completed_at"))
-        if reviewed_at is not None and hardened_at is not None and reviewed_at < hardened_at:
-            errors.append("final adversarial review must run after hardening.completed_at")
+        csat = ctarget.get("saturation") if isinstance(ctarget.get("saturation"), dict) else {}
+        tsat = target.get("saturation") if isinstance(target.get("saturation"), dict) else {}
+        if tsat.get("status") == "checked" and csat.get("discloses_reports") != tsat.get("discloses_reports"):
+            errors.append("candidate.target.saturation.discloses_reports must match the target ledger")
 
 
 PROOF_TYPE_TO_LEDGER_TYPES = {
@@ -335,6 +426,33 @@ def validate_report_target_contract(
             f"{target.get('route_type')}"
         )
 
+    scope = target.get("scope") if isinstance(target.get("scope"), dict) else {}
+    claim = candidate.get("claim_scope") if isinstance(candidate.get("claim_scope"), dict) else {}
+    target_max = scope.get("max_severity")
+    candidate_ceiling = claim.get("severity_ceiling")
+    if target_max in SEVERITY_RANK and candidate_ceiling in SEVERITY_RANK:
+        if SEVERITY_RANK[candidate_ceiling] > SEVERITY_RANK[target_max]:
+            errors.append("candidate.claim_scope.severity_ceiling exceeds target.scope.max_severity")
+
+    contestability = target.get("contestability") if isinstance(target.get("contestability"), dict) else {}
+    novelty = candidate.get("novelty") if isinstance(candidate.get("novelty"), dict) else {}
+    private_context = (
+        contestability.get("basis") == "private_unavailable"
+        or contestability.get("discloses_reports") is False
+        or (
+            target.get("route_type") in {"bounty", "vdp"}
+            and contestability.get("discloses_reports") is not True
+        )
+    )
+    risk = novelty.get("private_duplicate_risk")
+    if private_context and risk == "low":
+        errors.append(
+            "an invisible private report pool cannot support low private_duplicate_risk; "
+            "assess medium/high and state the uncertainty"
+        )
+    if private_context or risk == "high":
+        require_text(novelty, "collision_differentiator", "novelty", errors)
+
 
 def run_candidate_validator(
     module: ModuleType,
@@ -348,4 +466,3 @@ def run_candidate_validator(
         module.validate_decision(document, errors)
     else:
         module.validate_report(document, errors)
-

@@ -9,12 +9,18 @@ import sys
 from pathlib import Path
 
 import validate_hunt
+from hunt_validation.common import text
+from hunt_validation.target import target_fingerprint
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target-ledger", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--hypothesis-id",
+        help="investigating hypothesis to promote; optional only when exactly one exists",
+    )
     parser.add_argument(
         "--template",
         type=Path,
@@ -41,22 +47,63 @@ def main() -> int:
     decision = target.get("decision") if isinstance(target.get("decision"), dict) else {}
     if decision.get("disposition") != "SELECTED":
         errors.append("start-candidate requires target decision.disposition SELECTED")
+
+    campaign = target.get("campaign") if isinstance(target.get("campaign"), dict) else {}
+    campaign_id = campaign.get("campaign_id")
+    if not text(campaign_id):
+        errors.append("start-candidate requires campaign.campaign_id")
+
+    lifecycle = target.get("hypothesis_lifecycle")
+    investigating = [
+        hypothesis for hypothesis in lifecycle
+        if isinstance(hypothesis, dict) and hypothesis.get("status") == "investigating"
+    ] if isinstance(lifecycle, list) else []
+    hypothesis_id = args.hypothesis_id
+    if hypothesis_id:
+        matches = [
+            hypothesis for hypothesis in investigating
+            if hypothesis.get("hypothesis_id") == hypothesis_id
+        ]
+        if not matches:
+            errors.append(
+                f"start-candidate requires hypothesis_id {hypothesis_id!r} to exist with status investigating"
+            )
+        hypothesis = matches[0] if matches else {}
+    elif len(investigating) == 1:
+        hypothesis = investigating[0]
+        hypothesis_id = hypothesis.get("hypothesis_id")
+    elif not investigating:
+        errors.append(
+            "start-candidate requires an existing hypothesis with status investigating; "
+            "promote one in target.hypothesis_lifecycle first"
+        )
+        hypothesis = {}
+    else:
+        errors.append(
+            "start-candidate found multiple investigating hypotheses; pass --hypothesis-id to choose one"
+        )
+        hypothesis = {}
+
+    boundary_id = hypothesis.get("boundary_id") if isinstance(hypothesis, dict) else None
+    if not text(boundary_id):
+        errors.append("start-candidate requires the investigating hypothesis to reference boundary_id")
     if errors:
         validate_hunt.emit_messages("ERROR", errors)
         return 2
 
     candidate["target_ledger_id"] = target["target_id"]
+    candidate["campaign_id"] = campaign_id
+    candidate["target_fingerprint"] = target_fingerprint(target)
+    candidate["boundary_id"] = boundary_id
+    candidate["hypothesis_id"] = hypothesis_id
     ctarget = candidate.setdefault("target", {})
     for key in ("platform", "route_type", "asset_type", "program", "asset", "repository", "commit", "operating_mode"):
         ctarget[key] = validate_hunt.canonical_target_value(target, key) or ""
     scope = target.get("scope", {})
     ctarget["scope_evidence"] = validate_hunt.scope_evidence_summary(target)
     ctarget["scope_checked_at"] = scope.get("checked_at", "")
-    sat = target.get("saturation", {})
-    csat = ctarget.setdefault("saturation", {})
-    csat["discloses_reports"] = sat.get("discloses_reports") if sat.get("status") == "checked" else None
-    csat["reports_last_90d"] = None
-    csat["hot_cluster"] = None
+    ctarget.pop("saturation", None)
+    ctarget.pop("contestability", None)
 
     try:
         args.output.parent.mkdir(parents=True, exist_ok=True)
