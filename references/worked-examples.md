@@ -62,7 +62,11 @@ The one-sentence attacker model has no load-bearing hedge:
     "anonymous request returned 401",
     "nonexistent id returned 404"
   ],
-  "config_dependency": "none"
+  "config_dependency": {
+    "kind": "none",
+    "evidence": "the reproduced path uses the default configuration",
+    "precondition_grants_effect": false
+  }
 },
 "decision": {
   "verdict": "REPORTABLE",
@@ -170,7 +174,7 @@ A live scope artifact marks the exact asset ineligible. The ledger records:
 }
 ```
 
-Downstream proof-policy and saturation fields may remain unassessed because scope already terminated selection.
+Downstream proof-policy and contestability fields may remain unassessed because scope already terminated selection.
 
 ### Invalid rotation
 
@@ -194,4 +198,4 @@ These are synthetic gate examples. They do not come from a maintainer, researche
 | A query is exposed only when a development default remains enabled | No supported or deployed configuration using that default is demonstrated | Local behavior alone does not establish the program's proof route or production impact | Deployment / proof route |
 | A warning or confirmation step can be skipped while using a valid privileged credential | Authentication and authorization still succeed exactly as designed | Removing a user-interface warning adds no new server-side capability | Control class / capability delta |
 
-The meta-rule: **a load-bearing caveat is part of the verdict, not a footnote.** Run the one-sentence attacker-model test (section 5), record every caveat in `caveats`, and classify it honestly. The validator rejects `REPORTABLE` while any entry is `load_bearing`.
+The meta-rule: **a load-bearing hedge controls the gate; an ordinary limitation controls scope or severity.** Run the one-sentence attacker-model test, record every caveat in `caveats`, and classify it honestly. When only a stronger extension fails, use `NARROW` and keep the exact proven claim instead of discarding it.

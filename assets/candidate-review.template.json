@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "review_type": "candidate",
+  "reviewer": {
+    "mode": "independent_agent",
+    "id": "",
+    "reviewed_at": "",
+    "fresh_context": true
+  },
+  "verdict": "REPORTABLE",
+  "candidate": {
+    "path": "candidate.json",
+    "sha256": ""
+  }
+}

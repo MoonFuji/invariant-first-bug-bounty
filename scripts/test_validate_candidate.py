@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Acceptance tests for validate-candidate.py (skill v0.4.1 / schema 5).
+"""Synthetic acceptance tests for the import-only candidate validator core.
 
-Reproduces two anonymized failure shapes that reached triage as Informative:
-  - a terminal refutation marked `refuted` with no resolution attacking the
-    owned boundary;
-  - a `distinct` novelty claim backed only by `git log`, skipping the upstream
-    issue/PR search (marcel #153 live dup; activeresource #358 by-design).
+The cases preserve earlier-schema failure modes so manual upgrades fail loudly:
+  - a terminal refutation with no resolution attacking the owned boundary;
+  - a `distinct` novelty claim backed only by `git log`, skipping upstream
+    issue and pull-request searches.
 
 Schema-5 cases (K-W) cover the report-stage process gates: report stage now
 requires schema_version >= 5 (Q), and a finding matching a documented intentional
@@ -34,29 +33,29 @@ Exit 0 = all cases behaved as specified.
 """
 
 import copy
-import json
-import subprocess
-import sys
-import tempfile
-from pathlib import Path
+from hunt_validation.candidate import (
+    load_candidate_validator,
+    run_candidate_validator,
+    validate_candidate_schema,
+    validate_candidate_timestamps,
+    validate_claim_scope_and_recovery,
+)
 
-HERE = Path(__file__).resolve().parent
-VALIDATOR = HERE / "validate-candidate.py"
+VALIDATOR = load_candidate_validator()
 
 
 def run(document, stage):
-    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
-        json.dump(document, handle)
-        path = handle.name
-    try:
-        proc = subprocess.run(
-            [sys.executable, str(VALIDATOR), path, "--stage", stage],
-            capture_output=True,
-            text=True,
-        )
-    finally:
-        Path(path).unlink(missing_ok=True)
-    return proc.returncode, proc.stderr
+    errors = []
+    if stage == "target":
+        VALIDATOR.validate_target(document, errors)
+    else:
+        if document.get("schema_version") == 6:
+            validate_candidate_schema(document, errors)
+        run_candidate_validator(VALIDATOR, document, stage, errors)
+        if document.get("schema_version") == 6:
+            validate_claim_scope_and_recovery(document, errors)
+            validate_candidate_timestamps(document, errors)
+    return (2, "\n".join(errors)) if errors else (0, "")
 
 
 def evidence(method, artifact):
@@ -261,6 +260,46 @@ def baseline_v5():
     doc = baseline()
     doc["schema_version"] = 5
     doc.update(v5_process_blocks())
+    return doc
+
+
+def baseline_v6():
+    """A schema-6 REPORTABLE candidate with a bounded claim and no unresolved recovery."""
+    doc = baseline_v5()
+    doc["schema_version"] = 6
+    doc.update(
+        {
+            "campaign_id": "campaign-example-a-abc",
+            "target_fingerprint": "example-a-abc",
+            "boundary_id": "boundary-reports",
+            "hypothesis_id": "H-001",
+            "claim_scope": {
+                "highest_proven_rung": "demonstrated_impact",
+                "demonstrated_capability": "read a report owned by another test tenant",
+                "demonstrated_impact": "cross-tenant disclosure of an owned canary",
+                "unsupported_extensions": [],
+                "severity_ceiling": "high",
+            },
+            "recovery": {
+                "classification": "NONE",
+                "failed_rung": "",
+                "next_action": "",
+                "required_artifact": "",
+                "surviving_claim": "",
+            },
+        }
+    )
+    doc["decision"]["decided_at"] = "2026-08-30T04:00:00Z"
+    doc["hardening"]["completed_at"] = "2026-08-30T03:00:00Z"
+    doc["hardening"]["severity_reassessment"] = doc["hardening"].pop("escalated_severity")
+    doc["proof"]["config_dependency"] = {
+        "kind": "none",
+        "evidence": "not applicable: the proof uses the shipped path without a configuration precondition",
+        "precondition_grants_effect": False,
+    }
+    doc["proof"]["supporting_evidence_types"] = []
+    doc["caveats"] = []
+    doc.pop("hypothesis_queue")
     return doc
 
 
@@ -913,13 +952,13 @@ def case_AF_reject():
 def target_baseline():
     """A valid SELECTED target ledger: the golden target-stage ACCEPT."""
     return {
-        "program": "elastic",
-        "asset": "Fleet Server",
-        "repository": "github.com/elastic/fleet-server",
+        "program": "example",
+        "asset": "Example Server",
+        "repository": "github.com/example/server",
         "commit": "8f9e6bb",
         "operating_mode": "SOURCE_ONLY",
         "scope": {
-            "asset_identifier": "Fleet Server",
+            "asset_identifier": "Example Server",
             "eligible_for_bounty": True,
             "max_severity": "critical",
             "checked_at": "2026-08-19",
@@ -969,8 +1008,7 @@ def case_TD_reject():
 
 
 def case_TE_accept():
-    # ROTATED with a live-evidenced reason + a quoted auto-N/A policy line -> accept (the matomo fix,
-    # done right: the rotation cites the quoted live policy line, not a memory paraphrase)
+    # ROTATED with a live-evidenced reason + a quoted auto-N/A policy line -> accept.
     doc = target_baseline()
     doc["poc_policy"]["quote"] = "Reports based solely on source code analysis without a running-instance PoC are not accepted."
     doc["poc_policy"]["accepts_source_poc"] = False
@@ -993,7 +1031,87 @@ def case_TG_reject():
     return doc, "target", 2
 
 
+def case_AA6_accept():
+    return baseline_v6(), "report", 0
+
+
+def case_AB6_accept():
+    doc = baseline_v6()
+    doc["claim_scope"]["highest_proven_rung"] = "exact_executable"
+    doc["claim_scope"]["demonstrated_capability"] = "terminate the pinned parser with a crafted owned fixture"
+    doc["claim_scope"]["demonstrated_impact"] = "exact parser process exits on the owned fixture"
+    doc["claim_scope"]["unsupported_extensions"] = [
+        "supported product ingress to the parser was not demonstrated",
+        "automatic restart and repeated service outage were not demonstrated"
+    ]
+    doc["claim_scope"]["severity_ceiling"] = "medium"
+    doc["recovery"] = {
+        "classification": "NARROW",
+        "failed_rung": "owned_boundary",
+        "next_action": "report only the exact executable effect",
+        "required_artifact": "",
+        "surviving_claim": "the exact executable effect is reproduced with a negative control",
+    }
+    doc["caveats"] = [
+        {
+            "quote": "supported product ingress was not demonstrated",
+            "classification": "ordinary",
+            "justification": "the report is limited to the in-scope pinned parser executable",
+        },
+        {
+            "quote": "automatic restart was not demonstrated",
+            "classification": "ordinary",
+            "justification": "the report claims one process termination, not a crash loop",
+        },
+    ]
+    return doc, "report", 0
+
+
+def case_AC6_reject():
+    doc = baseline_v6()
+    doc["recovery"] = {
+        "classification": "RECOVER",
+        "failed_rung": "owned_boundary",
+        "next_action": "trace the supported product ingress",
+        "required_artifact": "artifacts/ingress-trace.txt",
+        "surviving_claim": "the exact executable effect remains demonstrated",
+    }
+    return doc, "report", 2
+
+
+def case_AD6_accept():
+    doc = baseline_v6()
+    doc["proof"]["config_dependency"] = {
+        "kind": "program_shipped_default",
+        "evidence": "config/defaults.yml:12 and release artifact SHA-256 abc",
+        "precondition_grants_effect": False,
+    }
+    return doc, "report", 0
+
+
+def case_AE6_reject():
+    doc = baseline_v6()
+    doc["proof"]["config_dependency"] = {
+        "kind": "operator_weakened",
+        "evidence": "operator disabled the authorization middleware",
+        "precondition_grants_effect": True,
+    }
+    return doc, "report", 2
+
+
+def case_AF6_reject():
+    doc = baseline_v6()
+    doc["decision"]["decided_at"] = "after lunch"
+    return doc, "report", 2
+
+
 CASES = [
+    ("AA6 schema-6 bounded candidate -> ACCEPT", case_AA6_accept, None),
+    ("AB6 NARROW preserves exact executable claim -> ACCEPT", case_AB6_accept, None),
+    ("AC6 unresolved RECOVER cannot report -> REJECT", case_AC6_reject, "forbids REPORTABLE"),
+    ("AD6 shipped default with evidence -> ACCEPT", case_AD6_accept, None),
+    ("AE6 operator-weakened precondition -> REJECT", case_AE6_reject, "operator_weakened"),
+    ("AF6 free-text decision timestamp -> REJECT", case_AF6_reject, "decision.decided_at"),
     ("2  resolution attacks same boundary -> ACCEPT", case_2_accept, None),
     ("K  schema-5 process gates satisfied -> ACCEPT", case_K_accept, None),
     ("O  FP-pattern hit rebutted -> ACCEPT", case_O_accept, None),

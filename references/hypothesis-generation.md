@@ -10,9 +10,10 @@
 
 The controller is invariant-first: model, then trace. This file feeds the *front* of that
 funnel when a target is large or unfamiliar and the single most valuable invariant is not
-obvious. It produces a **ranked queue of hypotheses**, never candidates. A hypothesis becomes
-a `candidate.json` only after it survives relevance and a first trace, exactly as in the main
-workflow. Ideation widens what you consider; it never lowers a gate.
+obvious. It produces a **ranked queue of hypotheses**, never candidates. After one hypothesis is
+promoted to `investigating`, `start_candidate.py` binds it to a `candidate.json`; the candidate then
+records the trace, evidence, and terminal decision. Ideation widens what you consider; it never
+lowers a gate.
 
 Discipline: every hypothesis carries a **creativity signal** — one line on why a grep sweep or
 a first-pass read would miss it. The signal is a **ranking input, not an admission gate**: it
@@ -23,23 +24,17 @@ scanner's caller-contract blindness would miss, it can still be the highest-expe
 hypothesis in the queue. Rank by expected value; never auto-discard a real, reachable bug for
 lacking cleverness.
 
-**The highest-value archetype, from real payouts: a cross-layer representational mismatch with an
-in-repo correctness oracle.** The findings that actually paid were not new *classes* — they were the
-same value canonicalized at one layer and used raw at another (a nullifier canonicalized at the
-proof/verify layer but deduped in *raw hex* at the DB uniqueness constraint, so equivalent encodings
-each mint a row and the one-human-one-vote invariant collapses). Two properties made them win where
-obvious findings on the *same saturated program* duped: (1) it takes holding two layers' differing
-representations in view at once — a scanner and a cautious reviewer both miss it; (2) the **same repo
-already ships the correct pattern elsewhere** (a sibling path that stores the canonical form), which
-*proves* "oversight, not by-design" instead of arguing it — this defeats an *Informative/by-design*
-close, though (per the duplicate data) an in-repo oracle does **not** by itself lower *duplicate*
-risk; its power is that the desync is a bespoke, low-collision vein a diff-reader never reaches. Hunt these:
-a representation / normalization / uniqueness value that is canonical in one place and raw in
-another, especially where an in-repo sibling does it right. The mirror-image losing profile is a
-**named-class hardening or missing-sibling finding you are already hedging to Low/conditional** —
-that is the duplicate-prone shape; do not feed it into a swarmed program.
+**A high-value archetype is a cross-layer representational mismatch with an in-repo correctness
+oracle.** Look for the same security-relevant value being canonicalized at one layer and used raw at
+another, especially at uniqueness, identity, authorization, or replay boundaries. This takes holding
+two layers' representations in view at once, so a sink search can miss it. A sibling path that already
+uses the canonical form is strong intent evidence: it can distinguish an oversight from a documented
+contract, although it does not prove novelty or eliminate private-duplicate risk. The mirror-image
+low-value profile is generic hardening or a missing-sibling check whose effect is already hedged as
+conditional. Rank that shape lower in a highly contested target unless the owned boundary and
+capability delta are independently demonstrated.
 
-Hypothesis record (keep it terse; store the survivors in `candidate.json.hypothesis_queue`):
+Hypothesis record (keep it terse; store the authoritative lifecycle in `target.json.hypothesis_lifecycle`):
 
 - id, title
 - attack class (primary mode) + any cross-modes
@@ -61,9 +56,8 @@ that forgets the closed ones. Promote exactly one `queued` hypothesis to the inv
 verdict before promoting the next. Do not spawn a second trace until the first reaches a terminal
 verdict. Volume of hypotheses is not depth — the depth contract still governs when to rotate.
 
-A hypothesis that relevance or a first trace does not support is simply dropped from the queue and
-you pivot to the next — that is the queue working, not a failed target, and it has no effect on
-`candidate.json` (a hypothesis is not a candidate, so there is no gate to fail). Only give up on
+A hypothesis that relevance or a first trace does not support is closed with its evidence and
+you pivot to the next — that is the queue working, not a failed target. Only give up on
 the whole target when the queue is exhausted and the depth contract's clean-repository record is
 complete for each invariant you tried.
 

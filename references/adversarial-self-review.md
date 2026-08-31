@@ -1,4 +1,4 @@
-# Adversarial Review — preparation and final certification
+# Adversarial Review — preparation and exact-file review
 
 ## Purpose
 
@@ -7,30 +7,35 @@ The strongest-refutation gate tests the single best benign explanation. This rev
 It runs twice:
 
 1. **Preparation** — the author runs the roles before proof to discover what evidence a skeptic would require. This pass may shape or kill the candidate, but it never certifies a final verdict.
-2. **Certification** — a fresh-context agent or human reviews the finished candidate after proof, novelty, and timestamped hardening. This pass rewrites the review fields and records the reviewer attestation; `reviewed_at` must be at or after `hardening.completed_at` and before `decision.decided_at`.
+2. **Exact-file review** — a fresh-context agent or human reviews the finished candidate after proof, novelty, hardening, and decision. This pass writes a separate sidecar bound to the candidate SHA-256; `reviewed_at` must be at or after `decision.decided_at`.
 
 A reviewer must receive the repository and final candidate artifact, not the author’s prosecution narrative.
 
 ## Reviewer attestation
 
-Use the structured object in `candidate.json`:
+Use `candidate-review.json`:
 
 ```jsonc
-"reviewer": {
-  "mode": "independent_agent|human|self|owed",
-  "id": "review-session-or-human-id",
-  "reviewed_at": "2026-08-20T04:00:00Z",
-  "artifact": "reviews/H-001.json",
-  "fresh_context": true
+{
+  "schema_version": 1,
+  "review_type": "candidate",
+  "reviewer": {
+    "mode": "independent_agent|human",
+    "id": "review-session-or-human-id",
+    "reviewed_at": "2026-08-20T04:10:00Z",
+    "fresh_context": true
+  },
+  "verdict": "REPORTABLE|KILL|ROUTE_ELSEWHERE|NO_REPORTABLE_FINDING|NOT_READY|REJECTED",
+  "candidate": {"path": "candidate.json", "sha256": "..."}
 }
 ```
 
 Rules:
 
-- `self` is preparation only and never final certification.
 - `independent_agent` requires `fresh_context: true`.
-- `human` is valid final certification.
-- `owed` means provisional. It may support decision-stage output but never final report readiness.
+- `human` is valid final review.
+- No sidecar means the candidate decision is provisional.
+- A digest proves which bytes were reviewed, not independence or truth.
 
 ## Role 1 — Advocate
 
@@ -134,7 +139,7 @@ That caveat determines `HOLD` or `KILL` until evidence removes it. Ordinary limi
 
 Do not reward deletion of honest caveats. Reward correctly classifying them.
 
-## Final report certification
+## Candidate review
 
 A final report review must cover the finished candidate, including:
 
@@ -145,9 +150,9 @@ A final report review must cover the finished candidate, including:
 - collision differentiator where required;
 - hardening results and final severity.
 
-The validator requires a final reviewer attestation plus the populated Advocate and Cold-verifier fields.
+The validator requires an affirmative exact-file sidecar plus the populated Advocate and Cold-verifier fields. After the report is written, a separate submission review must cover `submission.json`, `report.md`, the candidate, and every attachment. Candidate review never certifies later report text.
 
-## Final candidate-closure certification
+## Final candidate-closure review
 
 A candidate-level `NO_REPORTABLE_FINDING` is not merely the inverse of a report. The reviewer must audit whether this hypothesis was closed too early without pretending that one closure exhausts the target.
 

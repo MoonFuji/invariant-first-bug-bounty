@@ -2,4 +2,4 @@ interface:
   display_name: "Invariant-First Bug Bounty"
   short_description: "Target-bound, evidence-gated bug-bounty research"
   default_prompt: >-
-    Use $invariant-first-bug-bounty to run an authorized security campaign against this target. Create and validate the live-evidence target ledger first, generate candidates from that selected ledger, map and rank the hypothesis queue, investigate one invariant at a time, continue after every candidate verdict, and do not draft a report until the target-bound validator says REPORT READY after hardening and independent final review.
+    Use $invariant-first-bug-bounty to run an authorized, campaign-based security review, advance bounded proven findings without overclaiming, and prepare an exact digest-reviewed report bundle for my final submission check.

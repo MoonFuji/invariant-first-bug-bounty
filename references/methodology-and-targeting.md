@@ -14,33 +14,34 @@
 
 Select for **provability, ownership, and contestability**, not headline severity.
 
-Before auditing, record in `candidate.json`:
+Before auditing, record in `target.json`:
 
-- The declared operating mode (`SOURCE_ONLY` by default, or explicitly authorized `PROGRAM_HOSTED`) in `target.operating_mode`, with its authorization basis in `target.scope_evidence`.
+- The declared operating mode (`SOURCE_ONLY` by default, or explicitly authorized `PROGRAM_HOSTED`) in `target.operating_mode`, with its authorization basis in `target.scope.evidence`.
 - Current program status, asset, accepted bug classes, and scope evidence.
 - Exact repository and commit/release actually shipped or accepted by the program.
 - Whether a hosted instance, owned accounts, local deployment, device, or upstream advisory route is available.
 - The project that owns the suspected code and would ship its fix.
 - Payout eligibility and whether the payout rail is usable.
-- **Dedup visibility** in `target.saturation`: whether the program *discloses reports* — a **structural, verifiable** fact (does it publish a disclosed-reports feed?), read from the live page or HackerOne MCP, never memory. `reports_last_90d` and `hot_cluster` are **market dynamics training data cannot know** — pull them from HackerOne MCP (`GetProgramDisclosedReports` / stats) or leave null; never estimate them from memory. `discloses_reports` is the single strongest *verifiable* predictor of a duplicate.
+- **Contestability** in `target.contestability`: use a platform asset count when visible, public issue/advisory history where that is the real collision surface, `private_unavailable` when the private pool cannot be inspected, or `not_applicable` with a reason. Never fabricate numeric zero from unavailable data.
+- Prior outcomes and the concrete coverage delta from earlier reviews. A first hunt still records that the search was assessed and found no prior local coverage.
 
 Score candidates 1–5 on each axis:
 
 | Axis | Weight | 5 | 1 |
 |---|---:|---|---|
-| Dedup visibility / saturation | ×3 | Disclosing, low-volume program you can dedup against | Non-disclosing, high-volume (r90 ≳ 300), or a hot class-cluster |
+| Contestability | ×3 | Low-volume, searchable history | Invisible private pool, high volume, or hot class-cluster |
 | Exact proof available | ×3 | Live/real path and safe controls available | Only a statement-level trace |
 | Route ownership | ×3 | Destination clearly owns code and proof class | Dependency/ownership ambiguous |
 | Low contestability | ×3 | Product-specific invariant in under-reviewed code | Famous component or fresh-advisory hotspot |
 | Security-model leverage | ×2 | Stateful authz/logic/identity boundary | Generic isolated sink |
-| Stack fit | ×1 | Runtime and tests can be exercised | Unfamiliar/unbuildable target |
+| Verification path | ×1 | Runtime and tests can be exercised | Required environment is unavailable |
 | Payout reliability | ×1 | Paying, responsive, accessible | VDP, blocked rail, or unstable scope |
 
 A recent advisory is a **contestability penalty** unless the candidate proves a different semantic invariant, enforcement path, or affected asset. Fresh feature code and newly added scope can be attractive; a famous fresh CVE is usually crowded.
 
 **Saturation is a strong prior, but the finding's *collision rate* is what actually duplicates — not bug obviousness.** Prefer a disclosing, lower-volume program where a public deduplication review is possible, and treat a non-disclosing program as `private_duplicate_risk` ≥ `medium` because the private report pool is invisible. On saturated targets, require a concrete low-collision differentiator: a distinct cross-layer invariant, an unaffected asset, or a materially different enforcement path. An unusual payload against the same public root cause is not enough. Novelty is the tie-breaker within a well-chosen target and the deciding factor when every available target is crowded.
 
-This is a targeting prior, not a universal law; recalibrate it against the current program, platform, disclosure model, and asset saturation. On a non-disclosing program, `novelty.classification: distinct` means *distinct from the public pool only*. It is not evidence about private reports. A high-duplicate-context finding reaches `REPORTABLE` only when `novelty.collision_differentiator` explains why the root cause is unlikely to collide (validator: high risk / non-disclosing / hot cluster requires it).
+This is a targeting prior, not a universal law; recalibrate it against the current program, platform, disclosure model, and contestability. On a non-disclosing program, `novelty.classification: distinct` means *distinct from the public pool only*. It is not evidence about private reports. A high-duplicate-context finding reaches `REPORTABLE` only when `novelty.collision_differentiator` explains why the root cause is unlikely to collide.
 
 Route classes:
 
@@ -284,7 +285,8 @@ Score the reproduced capability, not the bug class or theoretical maximum.
 Generate a report only after:
 
 ```bash
-python scripts/validate_hunt.py --stage report --target-ledger target.json candidate.json
+python scripts/validate_hunt.py --stage report --target-ledger target.json \
+  --candidate-review candidate-review.json candidate.json
 ```
 
 Use:
@@ -322,6 +324,8 @@ Fix the authoritative enforcement point and add the demonstrated regression cont
 ```
 
 **Report hygiene (self-contained rule).** The report must stand alone: a triager understands the vulnerability, trace, impact, and reproduction without opening any working file. Ban pointer phrases ("see the draft/notes", "for the full trace see …") and internal identifiers (`candidate_id`, gate/stage tags) — inline the content instead. Pin every repository link to the exact commit **SHA**, never a branch like `main`, so it stays stable. Distinguish observed behavior (from a captured evidence artifact) from inferred impact. Embed the smallest snippet that proves the bug. Never write that a PoC executed unless an artifact shows it — otherwise label it theoretical or blocked with the reason.
+
+Candidate reportability is not final report readiness. Put the finished Markdown report and every attachment in a submission bundle, repeat the live scope and proof-policy preflight, and obtain a second review bound to the exact file digests. Any edit after review invalidates that review. A successful submission-stage validation means ready for the user's final platform check, not submitted.
 
 ## 7. Terminal decisions
 

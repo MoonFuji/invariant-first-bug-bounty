@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "target_id": "",
   "platform": "hackerone",
   "route_type": "bounty",
@@ -33,9 +33,10 @@
       "artifact": ""
     }
   },
-  "saturation": {
+  "contestability": {
     "status": "unassessed",
-    "asset_resolved_count": null,
+    "basis": "",
+    "count": null,
     "discloses_reports": null,
     "checked_at": "",
     "reason": "",
@@ -45,6 +46,66 @@
       "artifact": ""
     },
     "rationale": ""
+  },
+  "prior_outcomes": {
+    "status": "unassessed",
+    "summary": "",
+    "outcomes": [],
+    "checked_at": "",
+    "evidence": {
+      "method": "",
+      "source": "",
+      "artifact": ""
+    }
+  },
+  "coverage_delta": {
+    "status": "unassessed",
+    "previously_audited": [],
+    "new_or_uncovered": [],
+    "changed_since_last_review": [],
+    "checked_at": "",
+    "evidence": {
+      "method": "",
+      "source": "",
+      "artifact": ""
+    }
+  },
+  "architecture_boundary_map": {
+    "boundaries": [
+      {
+        "boundary_id": "B-001",
+        "name": "",
+        "entrypoints": [],
+        "trust_transition": "",
+        "evidence": {
+          "method": "",
+          "source": "",
+          "artifact": ""
+        }
+      }
+    ]
+  },
+  "hypothesis_lifecycle": [
+    {
+      "hypothesis_id": "H-001",
+      "boundary_id": "B-001",
+      "statement": "",
+      "priority": "high",
+      "status": "queued",
+      "candidate_id": null,
+      "candidate_sha256": null,
+      "terminal_verdict": null,
+      "closed_at": null,
+      "evidence": "",
+      "park_reason": ""
+    }
+  ],
+  "campaign": {
+    "campaign_id": "",
+    "mode": "",
+    "status": "open",
+    "stop_condition": "",
+    "closed_at": ""
   },
   "decision": {
     "disposition": "HOLD",
