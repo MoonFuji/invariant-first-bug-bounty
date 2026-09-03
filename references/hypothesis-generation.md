@@ -1,157 +1,163 @@
-# Hypothesis Generation
+# Hypothesis generation
 
-## Contents
-- Hypothesis record and the mandatory creativity signal
-- Eight attack modes (chaining, business-logic, race, second-order, trust-boundary, parser, state-machine, supply-chain)
-- Pre-mortem (backward reasoning)
-- Defensive code is a symptom
-- Contradiction / tension scan (TRIZ)
-- Adaptive-attacker (game-theoretic) framing
+Use this reference when a target is large or unfamiliar and the most valuable
+invariant is not obvious.
 
-The controller is invariant-first: model, then trace. This file feeds the *front* of that
-funnel when a target is large or unfamiliar and the single most valuable invariant is not
-obvious. It produces a **ranked queue of hypotheses**, never candidates. After one hypothesis is
-promoted to `investigating`, `start_candidate.py` binds it to a `candidate.json`; the candidate then
-records the trace, evidence, and terminal decision. Ideation widens what you consider; it never
-lowers a gate.
+Hypothesis generation widens what you consider. It never lowers evidence gates.
 
-Discipline: every hypothesis carries a **creativity signal** — one line on why a grep sweep or
-a first-pass read would miss it. The signal is a **ranking input, not an admission gate**: it
-feeds novelty and duplicate-risk scoring, not a keep/drop decision. An "obvious" idea ("SQL
-built by string concatenation") is likelier already reported and a scanner may have it, so it
-ranks lower on novelty — but if it is reachable, high-impact, and on an owned boundary that a
-scanner's caller-contract blindness would miss, it can still be the highest-expected-value
-hypothesis in the queue. Rank by expected value; never auto-discard a real, reachable bug for
-lacking cleverness.
+In default mode, keep ideas in working notes and select one invariant.
 
-**A high-value archetype is a cross-layer representational mismatch with an in-repo correctness
-oracle.** Look for the same security-relevant value being canonicalized at one layer and used raw at
-another, especially at uniqueness, identity, authorization, or replay boundaries. This takes holding
-two layers' representations in view at once, so a sink search can miss it. A sibling path that already
-uses the canonical form is strong intent evidence: it can distinguish an oversight from a documented
-contract, although it does not prove novelty or eliminate private-duplicate risk. The mirror-image
-low-value profile is generic hardening or a missing-sibling check whose effect is already hedged as
-conditional. Rank that shape lower in a highly contested target unless the owned boundary and
-capability delta are independently demonstrated.
+In broad autonomous work, store the durable queue in optional `campaign.json`.
+The target and candidate schemas do not require a queue.
 
-Hypothesis record (keep it terse; store the authoritative lifecycle in `target.json.hypothesis_lifecycle`):
+## Hypothesis record
 
-- id, title
-- attack class (primary mode) + any cross-modes
-- chain (multi-step) or single-step
-- preconditions (attacker starting position + required capability)
-- target asset (what the attacker gains)
-- suspected entrypoint and sink
-- creativity signal (one line; a ranking input, not a keep/drop gate)
-- priority (expected-value rank) and **status**: `queued` → `investigating` → `closed`, or `parked`
-- closed_verdict (once `closed`): the candidate's terminal verdict + gate (e.g. `KILL @ refutation`); or,
-  once `parked`, a `park_reason` recording the expected-value rationale for rotating off — never "too
-  hard" (difficulty is not an exit; see the Depth contract), and only with a higher-EV item still queued
+Keep each entry terse:
 
-The queue is the **campaign ledger**: it is the one durable, authoritative list of what has been
-tried and what remains. It is not per-candidate scratch — carry it forward as you move from one
-invariant to the next, and update each entry's `status` in place rather than starting a fresh queue
-that forgets the closed ones. Promote exactly one `queued` hypothesis to the invariant (set it
-`investigating`), run the full workflow, and on its terminal verdict mark it `closed` with the
-verdict before promoting the next. Do not spawn a second trace until the first reaches a terminal
-verdict. Volume of hypotheses is not depth — the depth contract still governs when to rotate.
+- id;
+- boundary;
+- falsifiable statement;
+- priority;
+- status: `queued`, `investigating`, `closed`, or `parked`;
+- candidate id/verdict/reason once closed.
 
-A hypothesis that relevance or a first trace does not support is closed with its evidence and
-you pivot to the next — that is the queue working, not a failed target. Only give up on
-the whole target when the queue is exhausted and the depth contract's clean-repository record is
-complete for each invariant you tried.
+Useful private working-note fields may include suspected entrypoint, sink,
+preconditions, attack class, and why a shallow grep would miss it. They do not
+need to become schema fields.
+
+Rank by expected value:
+
+```text
+reachability × owned-boundary confidence × impact × proofability ÷ duplicate pressure
+```
+
+Creativity is a ranking signal, not an admission gate. A simple reachable
+authorization bug outranks a speculative chain.
+
+## High-value mismatch archetype
+
+Look for one security-relevant value represented differently across layers,
+especially at identity, uniqueness, authorization, replay, or cache boundaries.
+
+Examples:
+
+- normalized for validation but raw for storage;
+- canonical ID in one sibling and alias/raw ID in another;
+- signed representation differs from consumed representation;
+- policy checks a URL parser that disagrees with the actual client.
+
+A sibling path already using the safer representation is useful intent evidence.
 
 ## Eight attack modes
 
-Cycle all eight against the recorded architecture. Cross-mode chains often survive the duplicate
-pools where single-mode ideas die — but they also cost more assumptions, more context, and a
-harder proof, and every extra link is another place the chain can be invented. Rank them by
-expected value like anything else: a simple, clearly reachable authorization bug outranks a
-speculative three-stage chain. Novelty is one axis, not an automatic top rank.
+### 1. Chaining
 
-1. **Chaining** — combine individually-low issues across a trust boundary. IDOR on metadata +
-   a token in that metadata = ATO. SSRF limited to internal DNS + DNS resolving a metadata
-   endpoint = credential theft. A patch that covers the HTTP path but not the WebSocket path
-   sharing the same unfixed parser.
-2. **Business-logic abuse** (invisible to static rules) — negative quantity/refund, self-invite
-   to a higher role, skip step 2 and go 1→3, exhaust another tenant's quota via accounting,
-   abuse a legitimate export/share/webhook as an exfil channel, undo/rollback to restore a
-   revoked privilege. (See taxonomy §17.)
-3. **Race / TOCTOU** — non-atomic check-then-act (balance check then deduct = double spend),
-   role changed between the authz check and the privileged action, symlink swap between stat()
-   and open(), an isolation level permitting phantom reads inside a multi-query operation.
-   (See taxonomy §16.)
-4. **Second-order / stored** — input stored under strong sanitization, later consumed where the
-   sanitization is weaker: stored XSS/SSRF/SSTI, second-order SQLi, a filename stored on upload
-   then used in a shell command during processing.
-5. **Trust-boundary confusion** — service A trusts B's claims without re-verifying; auth
-   middleware registered *after* the route; a gateway validates the JWT but the downstream
-   trusts any request from the gateway IP; an "internal" admin panel sharing origin/cookies with
-   the public app; a CLI running as the user that shells to a root helper.
-6. **Parser / protocol differential** — two components read the same bytes differently: CL vs TE
-   request smuggling, duplicate-JSON-key precedence, URL authority/percent-encode/backslash
-   handling, the Content-Type the validator checks vs the one the processor consumes, SAML
-   namespace-aware vs -unaware signature wrapping, path normalization done by one library for the
-   check and another for the route. (See taxonomy §15, emerging §1F.)
-7. **State machine** — replay step 3 of an OAuth flow for a second token, reuse a one-time code
-   by racing its invalidation, transition backward from a terminal state (cancelled→pending),
-   jump A→C skipping a required B, act inside an async-invalidation window where the old session
-   still works.
-8. **Supply-chain interaction** — a known gadget in a dependency + does the app deserialize
-   user-controlled data with it? safe-vs-unsafe API surface, an unoverridden insecure default,
-   a server-only library used in a browser context (or vice-versa). (See emerging §1C.)
+Combine individually limited primitives across a target-owned boundary. Every
+link still needs evidence; extra links are extra assumptions.
 
-Attempt at least two explicit cross-mode combinations per session (e.g. parser-differential +
-state-machine to bypass an OAuth `redirect_uri` check then replay the code; stored + trust-
-boundary to land a payload via a low-trust API that a high-trust renderer executes).
+### 2. Business logic
 
-## Pre-mortem (backward reasoning)
+Look for sequences of legitimate operations that reach forbidden state:
+negative/refund behavior, role/self-invite transitions, quota/accounting gaps,
+undo/rollback restoring revoked privilege.
 
-Assume this exact system is already catastrophically breached. Do **not** use generic outcomes
-("RCE", "auth bypass"). Write 5–7 catastrophes specific to *this* code and *this* asset (e.g.
-"any user drains any wallet by replaying a settlement", "a read-only token mints an admin
-session"). For each, chain backward: catastrophe → what must be true immediately before it
-(precondition) → what code operation produces that precondition → what attacker input or action
-creates it → which entrypoint carries that input. Each complete chain is a hypothesis. Keep the
-attack input concrete ("POST with Content-Length: 0 and a body", not "a malformed request").
+### 3. Race / TOCTOU
 
-A backward chain that only reaches a *precondition the attacker does not hold* is not a finding —
-it is a `HOLD`/`KILL @ reachability`. Do not fill the gap with "assume a compromised backend" or
-"assume a leaked credential"; those are the unevidenced preconditions the main workflow already
-forbids (SKILL step 6, strongest refutation). The chain must terminate at a real target-supported ingress.
+Find check-then-act or read-then-write sequences whose authoritative constraint
+does not close the window.
 
-## Defensive code is a symptom
+### 4. Second-order / stored
 
-Enumerate every defensive construct on the path (guard, clamp, retry, fallback, try/except,
-assert, sanitizer). For each ask: *what danger forced the author to write this?* Then: does the
-fallback/error path grant any access, return any data, or skip any check the happy path enforces?
-Does downstream code assume the happy path ran and behave differently on the fallback value? A
-guard that exists is **evidence** (not proof) that the author expected hostile input there — a
-lead worth investigating, not a finding on its own. Go find the input shape it was meant to stop
-and test whether it fully stops it, especially the encoding/case/normalization variants the
-author may not have considered.
+Input is accepted safely in one context and later consumed in a more dangerous
+one: stored SSRF/XSS/SSTI, filename-to-shell, delayed parser interpretation.
 
-## Contradiction / tension scan (TRIZ)
+### 5. Trust-boundary confusion
 
-Every engineering decision resolves a tension; the vulnerability lives in what was sacrificed.
-Scan for:
+One component trusts identity/assertions from another without re-verification,
+or an internal/trusted mode becomes reachable from a less-trusted principal.
 
-- **Compatibility** — multiple versions/protocols/clients supported → is the legacy/lenient path
-  held to the same security treatment as the strict new path?
-- **Performance** — caching, skipped steps, looser parsing → which security step got skipped?
-- **Convenience** — a simpler API, a default value, auto-config → is the default path as secure
-  as the explicit one?
-- **Completeness** — an edge case handled later, out of band → does the edge path get the same
-  checks as the main path?
-- **Async** — validates synchronously but acts asynchronously → is state consistent between
-  validation and action?
+### 6. Parser / protocol differential
 
-## Adaptive-attacker (game-theoretic) framing
+Two components interpret the same bytes differently: duplicate keys, URL
+authority/backslashes, path normalization, SAML namespaces, request framing,
+content-type mismatches.
 
-Model the attacker as interacting many times and learning. What does it learn after 1, 10, 1000
-requests? Look for: response differentiation (different error/timing/data for valid vs invalid
-inputs — an oracle), a known rate limit or counter (tells the attacker exactly how many probes
-are safe), state accumulation (inch forward in increments), timing oracles, cross-user side
-effects. If a sequence of individually-allowed requests reaches a forbidden state while staying
-under detection thresholds, that sequence is the hypothesis — trace it as one invariant about the
-end state, not as many small findings.
+### 7. State machine
+
+Replay, reorder, skip, race, or reverse transitions: one-time token reuse,
+cancelled→pending, OAuth step replay, async invalidation windows.
+
+### 8. Supply-chain interaction
+
+A dependency gadget matters only when the reviewed product reaches it through a
+supported caller contract. Trace the product-facing ingress and ownership.
+
+## Pre-mortem
+
+Assume the exact system is already breached. Write concrete target-specific
+outcomes, then reason backward:
+
+```text
+forbidden capability
+→ required state
+→ operation producing that state
+→ attacker-controlled input/action
+→ supported entrypoint
+```
+
+If the chain ends at a precondition the attacker does not hold, it is not a
+finding. Do not fill the gap with "assume compromised backend" or "assume leaked
+credential".
+
+## Defensive code as a symptom
+
+For each guard, clamp, retry, fallback, assertion, sanitizer, or recovery path,
+ask:
+
+- what danger motivated it?
+- do alternate/fallback paths enforce the same property?
+- does downstream code assume the happy-path guard ran?
+- which representation variants might bypass the intended defense?
+
+Defensive code is a lead, not proof.
+
+## Contradiction / tension scan
+
+Security gaps often appear where engineering resolves tension:
+
+- compatibility → legacy/lenient path;
+- performance → skipped checks/caching;
+- convenience → insecure default/auto-config;
+- completeness → edge path handled elsewhere;
+- async behavior → validation and action see different state.
+
+## Adaptive attacker framing
+
+Ask what repeated interaction reveals:
+
+- response/timing oracle;
+- rate-limit/counter behavior;
+- incremental state accumulation;
+- cross-user side effects;
+- retry/idempotency asymmetry.
+
+If a sequence of individually allowed actions reaches forbidden state, model
+that sequence as one invariant about the final state.
+
+## Campaign discipline
+
+When campaign mode is active:
+
+```text
+queued → investigating → closed
+                     ↘ parked
+```
+
+Promote one hypothesis at a time. After a terminal verdict, close it with the
+candidate id, verdict, and short reason, then continue according to the campaign
+stop condition.
+
+Do not call hypothesis volume "coverage". An exhaustive campaign is only as good
+as its boundary inventory and the depth of the traces actually closed.
+
+See `references/campaign-mode.md`.

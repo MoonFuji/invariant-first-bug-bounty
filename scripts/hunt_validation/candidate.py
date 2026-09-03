@@ -1,468 +1,235 @@
-"""Candidate binding, claim scope, and clean-review validation."""
+"""Lean per-invariant candidate validation."""
 from __future__ import annotations
-
-import importlib.util
-from pathlib import Path
-from types import ModuleType
 from typing import Any
+from .common import require_search_evidence, require_string_list, require_text, text
+from .target import MAX_SEVERITIES, canonical_target_value, find_campaign_hypothesis, target_fingerprint
 
-from .common import (
-    ValidationError,
-    normalized,
-    require_not_future,
-    require_ordered,
-    require_text,
-    require_timestamp,
-    text,
-)
-from .target import canonical_target_value, scope_evidence_summary, target_fingerprint
-
-CAVEAT_CLASSIFICATIONS = {"load_bearing", "ordinary"}
-CANDIDATE_SCHEMA_VERSION = 6
-RECOVERY_CLASSES = {"NONE", "RECOVER", "NARROW", "OPERATOR_REQUIRED"}
-CLAIM_RUNGS = (
-    "none",
-    "primitive",
-    "exact_executable",
-    "owned_boundary",
-    "demonstrated_impact",
-    "severity",
-)
+CANDIDATE_SCHEMA_VERSION = 7
+VERDICTS = {"REPORTABLE", "HOLD", "KILL", "ROUTE_ELSEWHERE"}
+GATES = {"model", "reachability", "capability_delta", "refutation", "proof", "ownership", "novelty", "reportability", "route"}
+PROOF_LEVELS = {"primitive", "executable", "boundary"}
+PROOF_TYPES = {"none", "live-two-identity", "live-deployed", "executable-local-exact-path", "regression-test", "maintainer-fix-or-cve", "hardware-reproduction"}
+FINAL_PROOF_TYPES = PROOF_TYPES - {"none"}
+CONFIG_DEPENDENCIES = {"none", "program_shipped_default", "supported_option", "operator_weakened", "test_only", "unknown"}
+REFUTATION_RESULTS = {"refuted", "confirmed", "unresolved"}
+REFUTATION_KINDS = {"non_terminal", "owned_boundary_absent", "capability_already_possessed", "required_precondition_already_grants_effect", "behavior_is_documented_contract", "target_does_not_own_security_property", "unreachable_under_supported_contract"}
+TERMINAL_REFUTATION_KINDS = REFUTATION_KINDS - {"non_terminal"}
+ROUTE_TYPES = {"program", "upstream-advisory", "ibb", "vendor"}
+RECOVERY_STATUSES = {"ready", "recover", "narrow", "operator_required"}
+NOVELTY_CLASSIFICATIONS = {"distinct", "duplicate", "uncertain"}
+SEARCH_RESULTS = {"checked", "no_match", "unavailable"}
+REQUIRED_COMMON_SEARCHES = {"own_reports", "program_disclosures", "recent_advisories"}
+REQUIRED_REPOSITORY_SEARCHES = {"upstream_commits", "upstream_issues", "upstream_pull_requests"}
+CURRENT_STATE_RESULTS = {"vulnerable", "fixed", "unavailable"}
+PRIVATE_DUPLICATE_RISKS = {"unknown", "low", "medium", "high"}
+PROOF_TYPE_TO_TARGET_POLICY = {"live-two-identity": {"program-hosted-owned-account"}, "live-deployed": {"researcher-owned-deployment", "program-hosted-owned-account"}, "executable-local-exact-path": {"executable-local-exact-path"}, "regression-test": {"regression-test"}, "maintainer-fix-or-cve": {"maintainer-fix-or-cve"}, "hardware-reproduction": {"hardware-reproduction"}}
+ROUTE_TYPE_TO_CANDIDATE = {"bounty": "program", "vdp": "program", "upstream-advisory": "upstream-advisory", "ibb": "ibb", "vendor": "vendor"}
 SEVERITY_RANK = {"informational": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
 
 
-def validate_candidate_schema(document: dict[str, Any], errors: list[str]) -> None:
-    if document.get("schema_version") != CANDIDATE_SCHEMA_VERSION:
-        errors.append(
-            f"candidate.schema_version must be {CANDIDATE_SCHEMA_VERSION}; "
-            "older candidates require deliberate review and manual upgrade"
-        )
-    for key in (
-        "candidate_id",
-        "campaign_id",
-        "target_fingerprint",
-        "boundary_id",
-        "hypothesis_id",
-    ):
-        require_text(document, key, "candidate", errors)
+def validate_candidate_schema(candidate: dict[str, Any], errors: list[str]) -> None:
+    if candidate.get("schema_version") != CANDIDATE_SCHEMA_VERSION: errors.append(f"candidate.schema_version must be {CANDIDATE_SCHEMA_VERSION}; older records need deliberate migration")
+    require_text(candidate, "candidate_id", "candidate", errors); require_text(candidate, "target_ledger_id", "candidate", errors); require_text(candidate, "target_fingerprint", "candidate", errors)
+    for optional in ("campaign_id", "hypothesis_id"):
+        value = candidate.get(optional)
+        if value is not None and not text(value): errors.append(f"candidate.{optional} must be a non-empty string or null")
 
 
-def validate_claim_scope_and_recovery(document: dict[str, Any], errors: list[str]) -> None:
-    proof = document.get("proof") if isinstance(document.get("proof"), dict) else {}
-    supporting = proof.get("supporting_evidence_types")
-    if not isinstance(supporting, list):
-        errors.append("proof.supporting_evidence_types must be an array")
-    elif any(item != "static-source-trace" for item in supporting):
-        errors.append("proof.supporting_evidence_types only accepts static-source-trace")
-    if proof.get("type") == "static-source-trace":
-        errors.append(
-            "proof.type static-source-trace cannot be final proof; record it as supporting evidence "
-            "and prove the exact executable or hosted path"
-        )
-
-    claim = document.get("claim_scope")
-    if not isinstance(claim, dict):
-        errors.append("candidate.claim_scope must be an object")
-        return
-    rung = claim.get("highest_proven_rung")
-    if rung not in CLAIM_RUNGS:
-        errors.append("claim_scope.highest_proven_rung must be one of " + ", ".join(CLAIM_RUNGS))
-    for key in ("demonstrated_capability", "demonstrated_impact", "severity_ceiling"):
-        if not isinstance(claim.get(key), str):
-            errors.append(f"claim_scope.{key} must be a string")
-    unsupported = claim.get("unsupported_extensions")
-    if not isinstance(unsupported, list) or any(not text(item) for item in unsupported):
-        errors.append("claim_scope.unsupported_extensions must be an array of non-empty strings")
-
-    recovery = document.get("recovery")
-    if not isinstance(recovery, dict):
-        errors.append("candidate.recovery must be an object")
-        return
-    classification = recovery.get("classification")
-    if classification not in RECOVERY_CLASSES:
-        errors.append("recovery.classification must be one of " + ", ".join(sorted(RECOVERY_CLASSES)))
-        return
-    verdict = document.get("decision", {}).get("verdict") if isinstance(document.get("decision"), dict) else None
-    if verdict == "REPORTABLE":
-        for key in ("demonstrated_capability", "demonstrated_impact"):
-            if not text(claim.get(key)):
-                errors.append(f"REPORTABLE requires non-empty claim_scope.{key}")
-        if claim.get("severity_ceiling") not in SEVERITY_RANK:
-            errors.append(
-                "REPORTABLE requires claim_scope.severity_ceiling informational, low, medium, high, or critical"
-            )
-        if rung not in CLAIM_RUNGS[2:]:
-            errors.append("REPORTABLE requires at least an exact_executable highest_proven_rung")
-    if classification == "NONE":
-        return
-    failed_rung = recovery.get("failed_rung")
-    if failed_rung not in CLAIM_RUNGS[1:]:
-        errors.append("recovery.failed_rung must identify a concrete claim rung")
-    require_text(recovery, "next_action", "recovery", errors)
-    if classification in {"RECOVER", "OPERATOR_REQUIRED"}:
-        require_text(recovery, "required_artifact", "recovery", errors)
-        if verdict == "REPORTABLE":
-            errors.append(f"recovery.classification {classification} forbids REPORTABLE until resolved")
-    elif classification == "NARROW":
-        require_text(recovery, "surviving_claim", "recovery", errors)
-        if not unsupported:
-            errors.append("NARROW requires claim_scope.unsupported_extensions to record dropped claims")
-        if rung in {"none", "primitive"} and verdict == "REPORTABLE":
-            errors.append("NARROW cannot be REPORTABLE without at least an exact executable claim")
-
-
-def validate_candidate_timestamps(document: dict[str, Any], errors: list[str]) -> None:
-    decision = document.get("decision") if isinstance(document.get("decision"), dict) else {}
-    require_not_future(decision.get("decided_at"), "decision.decided_at", errors)
-    hardening = document.get("hardening") if isinstance(document.get("hardening"), dict) else {}
-    if hardening.get("status") == "done":
-        require_not_future(hardening.get("completed_at"), "hardening.completed_at", errors)
-        require_ordered(
-            hardening.get("completed_at"),
-            "hardening.completed_at",
-            decision.get("decided_at"),
-            "decision.decided_at",
-            errors,
-        )
-
-
-def load_candidate_validator() -> ModuleType:
-    path = Path(__file__).resolve().parent.parent / "validate-candidate.py"
-    spec = importlib.util.spec_from_file_location("candidate_validator", path)
-    if spec is None or spec.loader is None:
-        raise ValidationError(f"cannot load candidate validator: {path}")
-    module = importlib.util.module_from_spec(spec)
-    try:
-        spec.loader.exec_module(module)
-    except (OSError, ImportError, SyntaxError) as exc:
-        raise ValidationError(f"cannot load candidate validator {path}: {exc}") from exc
-    return module
-
-
-def validate_caveat_ledger(document: dict[str, Any], errors: list[str]) -> None:
-    """Every hedge surfaced by the one-sentence attacker-model test must be
-    recorded and classified. Classification stays a judgment; the ledger makes
-    it explicit and auditable instead of silent. A self-classified
-    load-bearing caveat forbids REPORTABLE until evidence removes it."""
-    decision = document.get("decision") if isinstance(document.get("decision"), dict) else {}
-    if decision.get("verdict") != "REPORTABLE":
-        return
-    caveats = document.get("caveats")
-    if not isinstance(caveats, list):
-        errors.append(
-            "REPORTABLE requires a caveats[] ledger with one {quote, classification, justification} "
-            "entry per hedge surfaced by the attacker-model test"
-        )
-        return
-    for index, caveat in enumerate(caveats):
-        path = f"caveats[{index}]"
-        if not isinstance(caveat, dict):
-            errors.append(f"{path} must be an object")
-            continue
-        for key in ("quote", "classification", "justification"):
-            if not text(caveat.get(key)):
-                errors.append(f"{path}.{key} must be a non-empty string")
-        classification = normalized(caveat.get("classification"))
-        if classification and classification not in CAVEAT_CLASSIFICATIONS:
-            errors.append(f"{path}.classification must be load_bearing or ordinary")
-    if any(
-        isinstance(caveat, dict) and normalized(caveat.get("classification")) == "load_bearing"
-        for caveat in caveats
-    ):
-        errors.append(
-            "a load-bearing caveat forbids REPORTABLE: remove it with evidence and record that "
-            "evidence in the justification, narrow the claim to what survived, or decide HOLD/KILL"
-        )
-
-
-def validate_closure_review(
-    document: dict[str, Any],
-    errors: list[str],
-    *,
-    provisional: bool,
-    warnings: list[str] | None = None,
-) -> None:
-    clean = document.get("closure_review")
-    if not isinstance(clean, dict):
-        errors.append("NO_REPORTABLE_FINDING requires a closure_review block")
-        return
-    if provisional:
-        if clean.get("verdict") not in {"UNREVIEWED", "OWED"}:
-            errors.append("provisional closure_review.verdict must be UNREVIEWED or OWED")
-        return
-    if clean.get("verdict") != "DEPTH_SUFFICIENT":
-        errors.append("final NO_REPORTABLE_FINDING requires closure_review.verdict DEPTH_SUFFICIENT")
-
-    cold = document.get("adversarial_review", {}).get("cold_verify") if isinstance(document.get("adversarial_review"), dict) else None
-    if not isinstance(cold, dict):
-        errors.append("final NO_REPORTABLE_FINDING requires adversarial_review.cold_verify")
-    else:
-        if cold.get("verdict") != "DISPROVED":
-            errors.append("final NO_REPORTABLE_FINDING requires cold_verify.verdict DISPROVED; UNCERTAIN is HOLD")
-        if not text(cold.get("rederived_severity")):
-            errors.append("DISPROVED clean closure requires cold_verify.rederived_severity (usually an evidenced n/a)")
-        if not text(cold.get("killed_subclaim")):
-            errors.append("DISPROVED clean closure requires cold_verify.killed_subclaim")
-        subclaims = cold.get("subclaims")
-        unsupported = False
-        if not isinstance(subclaims, list) or len(subclaims) < 2:
-            errors.append("DISPROVED clean closure requires at least two cold_verify.subclaims")
-        else:
-            for index, subclaim in enumerate(subclaims):
-                path = f"adversarial_review.cold_verify.subclaims[{index}]"
-                if not isinstance(subclaim, dict):
-                    errors.append(f"{path} must be an object")
-                    continue
-                for key in ("claim", "status", "evidence"):
-                    if not text(subclaim.get(key)):
-                        errors.append(f"{path}.{key} must be a non-empty string")
-                status = normalized(subclaim.get("status"))
-                if status not in {"supported", "unsupported"}:
-                    errors.append(f"{path}.status must be supported or unsupported")
-                if status == "unsupported":
-                    unsupported = True
-            if not unsupported:
-                errors.append("DISPROVED clean closure requires at least one unsupported subclaim")
-
-    closures = clean.get("closures_challenged")
-    if not isinstance(closures, list) or not closures:
-        errors.append("closure_review.closures_challenged must contain at least one challenged closure")
-    else:
-        for index, closure in enumerate(closures):
-            path = f"closure_review.closures_challenged[{index}]"
-            if not isinstance(closure, dict):
-                errors.append(f"{path} must be an object")
-                continue
-            for key in ("hypothesis", "closure", "challenge", "evidence"):
-                if not text(closure.get(key)):
-                    errors.append(f"{path}.{key} must be a non-empty string")
-
-    probe = clean.get("probe_assessment")
-    if not isinstance(probe, dict):
-        errors.append("closure_review.probe_assessment must be an object")
-    else:
-        sufficient = probe.get("sufficient")
-        waived = probe.get("waived") is True
-        if sufficient is not True and not waived:
-            errors.append("closure_review requires a sufficient adversarial probe or an evidenced waiver")
-        require_text(probe, "evidence", "closure_review.probe_assessment", errors)
-        if waived:
-            require_text(probe, "waiver_reason", "closure_review.probe_assessment", errors)
-
-    # These arrays feed the next campaign step. A candidate-level
-    # NO_REPORTABLE_FINDING may close while other hypotheses remain; silently
-    # erasing them would recreate the stop-after-one-candidate failure.
-    for key in ("coverage_gaps", "remaining_high_value_hypotheses"):
-        value = clean.get(key)
-        if not isinstance(value, list):
-            errors.append(f"closure_review.{key} must be an array")
-        elif any(not text(item) for item in value):
-            errors.append(f"closure_review.{key} items must be non-empty strings")
-
-    if (
-        warnings is not None
-        and clean.get("verdict") == "DEPTH_SUFFICIENT"
-        and not clean.get("coverage_gaps")
-        and not clean.get("remaining_high_value_hypotheses")
-    ):
-        warnings.append(
-            "clean closure claims no coverage gaps and no remaining high-value hypotheses; "
-            "ensure the exhaustion record genuinely supports a fully covered target"
-        )
-
-
-def validate_probe_shapes(document: dict[str, Any], warnings: list[str]) -> None:
-    if document.get("decision", {}).get("verdict") != "NO_REPORTABLE_FINDING":
-        return
-    probes = document.get("exhaustion", {}).get("probes") if isinstance(document.get("exhaustion"), dict) else None
-    required = {
-        "hypothesis", "command", "would_fire_if_vulnerable",
-        "observed", "result", "origin",
-    }
-    good = False
-    if isinstance(probes, list):
-        for probe in probes:
-            if (
-                isinstance(probe, dict)
-                and all(text(probe.get(key)) for key in required)
-                and normalized(probe.get("result")) == "negative"
-                and normalized(probe.get("origin")) == "researcher_adversarial"
-            ):
-                good = True
-                break
-    closure = document.get("closure_review")
-    assessment = closure.get("probe_assessment") if isinstance(closure, dict) else None
-    waived = (
-        isinstance(assessment, dict)
-        and assessment.get("waived") is True
-        and text(assessment.get("waiver_reason"))
-        and text(assessment.get("evidence"))
-    )
-    if not good and not waived:
-        warnings.append(
-            "NO_REPORTABLE_FINDING has no fully recorded researcher-designed adversarial probe; each "
-            "probe needs hypothesis, command, would_fire_if_vulnerable, observed, result=negative, "
-            "and origin=researcher_adversarial (or an independently evidenced waiver)"
-        )
-
-
-def validate_candidate_target_binding(
-    candidate: dict[str, Any],
-    target: dict[str, Any],
-    errors: list[str],
-) -> None:
+def validate_candidate_target_binding(candidate: dict[str, Any], target: dict[str, Any], errors: list[str]) -> None:
     decision = target.get("decision") if isinstance(target.get("decision"), dict) else {}
-    if decision.get("disposition") != "SELECTED":
-        errors.append("candidate stages require a target ledger whose decision.disposition is SELECTED")
-
-    if candidate.get("target_ledger_id") != target.get("target_id"):
-        errors.append("candidate.target_ledger_id must match target.target_id")
-
-    version = candidate.get("schema_version")
-    if version == CANDIDATE_SCHEMA_VERSION:
-        campaign = target.get("campaign") if isinstance(target.get("campaign"), dict) else {}
-        if candidate.get("campaign_id") != campaign.get("campaign_id"):
-            errors.append("candidate.campaign_id must match target.campaign.campaign_id")
-        if candidate.get("target_fingerprint") != target_fingerprint(target):
-            errors.append(
-                "candidate.target_fingerprint does not match the stable target identity; "
-                "create a new candidate when the asset, revision, route, or operating mode changes"
-            )
-        lifecycle = target.get("hypothesis_lifecycle")
-        matches = [
-            hypothesis for hypothesis in lifecycle
-            if isinstance(hypothesis, dict)
-            and hypothesis.get("hypothesis_id") == candidate.get("hypothesis_id")
-        ] if isinstance(lifecycle, list) else []
-        if len(matches) != 1:
-            errors.append("candidate.hypothesis_id must identify exactly one target hypothesis")
-        else:
-            hypothesis = matches[0]
-            if hypothesis.get("boundary_id") != candidate.get("boundary_id"):
-                errors.append("candidate.boundary_id must match the bound target hypothesis")
-            if hypothesis.get("status") not in {"investigating", "closed"}:
-                errors.append(
-                    "candidate hypothesis must be investigating or closed; "
-                    "queued or parked hypotheses cannot validate this candidate"
-                )
-            if hypothesis.get("status") == "closed":
-                if hypothesis.get("candidate_id") != candidate.get("candidate_id"):
-                    errors.append("closed hypothesis candidate_id must match the candidate")
-                verdict = candidate.get("decision", {}).get("verdict") if isinstance(candidate.get("decision"), dict) else None
-                if hypothesis.get("terminal_verdict") != verdict:
-                    errors.append("closed hypothesis terminal_verdict must match candidate.decision.verdict")
-
-    ctarget = candidate.get("target") if isinstance(candidate.get("target"), dict) else {}
-    for candidate_key, target_key in (
-        ("platform", "platform"),
-        ("route_type", "route_type"),
-        ("asset_type", "asset_type"),
-        ("program", "program"),
-        ("asset", "asset"),
-        ("repository", "repository"),
-        ("commit", "commit"),
-        ("operating_mode", "operating_mode"),
-    ):
-        if ctarget.get(candidate_key) != canonical_target_value(target, target_key):
-            errors.append(f"candidate.target.{candidate_key} must match target ledger {target_key}")
-
-    # Schema 6 binds the immutable identity above. Mutable scope and
-    # contestability evidence may be refreshed in the target ledger without
-    # invalidating a technically unchanged candidate. Legacy records retain
-    # their exact copied-evidence checks when these helpers are imported.
-    if version != CANDIDATE_SCHEMA_VERSION:
-        scope = target.get("scope") if isinstance(target.get("scope"), dict) else {}
-        if ctarget.get("scope_checked_at") != scope.get("checked_at"):
-            errors.append("candidate.target.scope_checked_at must match target.scope.checked_at")
-        expected_scope_evidence = scope_evidence_summary(target)
-        if ctarget.get("scope_evidence") != expected_scope_evidence:
-            errors.append("candidate.target.scope_evidence must identify the target ledger scope artifact")
-
-        csat = ctarget.get("saturation") if isinstance(ctarget.get("saturation"), dict) else {}
-        tsat = target.get("saturation") if isinstance(target.get("saturation"), dict) else {}
-        if tsat.get("status") == "checked" and csat.get("discloses_reports") != tsat.get("discloses_reports"):
-            errors.append("candidate.target.saturation.discloses_reports must match the target ledger")
+    if decision.get("disposition") != "SELECTED": errors.append("candidate stages require target decision.disposition SELECTED")
+    if candidate.get("target_ledger_id") != target.get("target_id"): errors.append("candidate.target_ledger_id must match target.target_id")
+    if candidate.get("target_fingerprint") != target_fingerprint(target): errors.append("candidate.target_fingerprint does not match the target identity; start a new candidate after asset/revision/route changes")
+    bound = candidate.get("target")
+    if not isinstance(bound, dict): errors.append("candidate.target must be an object"); return
+    for key in ("platform", "route_type", "asset_type", "program", "asset", "repository", "commit", "operating_mode"):
+        if bound.get(key) != canonical_target_value(target, key): errors.append(f"candidate.target.{key} must match target ledger {key}")
 
 
-PROOF_TYPE_TO_LEDGER_TYPES = {
-    "live-two-identity": {"program-hosted-owned-account"},
-    "live-deployed": {"researcher-owned-deployment", "program-hosted-owned-account"},
-    "executable-local-exact-path": {"executable-local-exact-path"},
-    "regression-test": {"regression-test"},
-    "maintainer-fix-or-cve": {"maintainer-fix-or-cve"},
-    "hardware-reproduction": {"hardware-reproduction"},
-}
-ROUTE_TYPE_TO_CANDIDATE = {
-    "bounty": "program",
-    "vdp": "program",
-    "upstream-advisory": "upstream-advisory",
-    "ibb": "ibb",
-    "vendor": "vendor",
-}
+def validate_campaign_binding(candidate: dict[str, Any], campaign: dict[str, Any] | None, errors: list[str]) -> None:
+    campaign_id = candidate.get("campaign_id"); hypothesis_id = candidate.get("hypothesis_id")
+    if campaign is None:
+        if campaign_id is not None or hypothesis_id is not None: errors.append("candidate campaign_id/hypothesis_id require --campaign-ledger")
+        return
+    if campaign.get("target_id") != candidate.get("target_ledger_id"): errors.append("campaign.target_id must match candidate.target_ledger_id")
+    if campaign_id != campaign.get("campaign_id"): errors.append("candidate.campaign_id must match campaign.campaign_id")
+    if not text(hypothesis_id): errors.append("campaign-bound candidate requires hypothesis_id"); return
+    hypothesis = find_campaign_hypothesis(campaign, hypothesis_id)
+    if hypothesis is None: errors.append("candidate.hypothesis_id must identify exactly one campaign hypothesis"); return
+    if hypothesis.get("status") not in {"investigating", "closed"}: errors.append("candidate hypothesis must be investigating or closed")
+    if hypothesis.get("status") == "closed":
+        if hypothesis.get("candidate_id") != candidate.get("candidate_id"): errors.append("closed campaign hypothesis candidate_id must match candidate")
+        verdict = candidate.get("decision", {}).get("verdict") if isinstance(candidate.get("decision"), dict) else None
+        if hypothesis.get("verdict") != verdict: errors.append("closed campaign hypothesis verdict must match candidate decision")
 
 
-def validate_report_target_contract(
-    candidate: dict[str, Any],
-    target: dict[str, Any],
-    errors: list[str],
-) -> None:
-    """Bind the final report's route and proof type to the selected ledger."""
-    policy = target.get("proof_policy") if isinstance(target.get("proof_policy"), dict) else {}
-    accepted = policy.get("accepted_proof_types")
-    accepted_set = set(accepted) if isinstance(accepted, list) else set()
-    proof = candidate.get("proof") if isinstance(candidate.get("proof"), dict) else {}
-    proof_type = proof.get("type")
-    mapped = PROOF_TYPE_TO_LEDGER_TYPES.get(proof_type, set())
-    if not mapped.intersection(accepted_set):
-        errors.append(
-            "candidate proof.type is not one of the proof routes accepted by the selected target ledger"
-        )
-
-    route = candidate.get("route") if isinstance(candidate.get("route"), dict) else {}
-    expected_route = ROUTE_TYPE_TO_CANDIDATE.get(target.get("route_type"))
-    if expected_route is not None and route.get("type") != expected_route:
-        errors.append(
-            f"REPORTABLE candidate route.type must be {expected_route} for target route_type "
-            f"{target.get('route_type')}"
-        )
-
-    scope = target.get("scope") if isinstance(target.get("scope"), dict) else {}
-    claim = candidate.get("claim_scope") if isinstance(candidate.get("claim_scope"), dict) else {}
-    target_max = scope.get("max_severity")
-    candidate_ceiling = claim.get("severity_ceiling")
-    if target_max in SEVERITY_RANK and candidate_ceiling in SEVERITY_RANK:
-        if SEVERITY_RANK[candidate_ceiling] > SEVERITY_RANK[target_max]:
-            errors.append("candidate.claim_scope.severity_ceiling exceeds target.scope.max_severity")
-
-    contestability = target.get("contestability") if isinstance(target.get("contestability"), dict) else {}
-    novelty = candidate.get("novelty") if isinstance(candidate.get("novelty"), dict) else {}
-    private_context = (
-        contestability.get("basis") == "private_unavailable"
-        or contestability.get("discloses_reports") is False
-        or (
-            target.get("route_type") in {"bounty", "vdp"}
-            and contestability.get("discloses_reports") is not True
-        )
-    )
-    risk = novelty.get("private_duplicate_risk")
-    if private_context and risk == "low":
-        errors.append(
-            "an invisible private report pool cannot support low private_duplicate_risk; "
-            "assess medium/high and state the uncertainty"
-        )
-    if private_context or risk == "high":
-        require_text(novelty, "collision_differentiator", "novelty", errors)
+def validate_model(candidate: dict[str, Any], errors: list[str]) -> None:
+    require_text(candidate, "invariant", "candidate", errors)
+    attacker = candidate.get("attacker_model")
+    if not isinstance(attacker, dict): errors.append("candidate.attacker_model must be an object"); return
+    for key in ("starting_access", "controls", "boundary", "capability_before", "capability_after"): require_text(attacker, key, "attacker_model", errors)
 
 
-def run_candidate_validator(
-    module: ModuleType,
-    document: dict[str, Any],
-    stage: str,
-    errors: list[str],
-) -> None:
-    if stage == "model":
-        module.validate_model(document, errors)
-    elif stage == "decision":
-        module.validate_decision(document, errors)
+def validate_trace(candidate: dict[str, Any], errors: list[str]) -> None:
+    trace = candidate.get("trace")
+    if not isinstance(trace, dict): errors.append("candidate.trace must be an object"); return
+    for key in ("entrypoint", "security_check", "effect", "sibling_checked"): require_text(trace, key, "trace", errors)
+
+
+def validate_refutation(candidate: dict[str, Any], errors: list[str]) -> None:
+    ref = candidate.get("strongest_refutation")
+    if not isinstance(ref, dict): errors.append("candidate.strongest_refutation must be an object"); return
+    require_text(ref, "claim", "strongest_refutation", errors); require_text(ref, "evidence", "strongest_refutation", errors)
+    kind = ref.get("kind"); result = ref.get("result")
+    if kind not in REFUTATION_KINDS: errors.append("strongest_refutation.kind is invalid")
+    if result not in REFUTATION_RESULTS: errors.append("strongest_refutation.result must be refuted, confirmed, or unresolved")
+    if kind in TERMINAL_REFUTATION_KINDS and result == "refuted": errors.append("a terminal refutation cannot be marked refuted; only a non_terminal objection can be defeated by evidence")
+
+
+def validate_proof(candidate: dict[str, Any], errors: list[str]) -> None:
+    proof = candidate.get("proof")
+    if not isinstance(proof, dict): errors.append("candidate.proof must be an object"); return
+    if proof.get("level") not in PROOF_LEVELS: errors.append("proof.level must be primitive, executable, or boundary")
+    if proof.get("type") not in PROOF_TYPES: errors.append("proof.type is invalid")
+    for key in ("command", "artifact", "observed_result", "negative_control", "production_relevance"): require_text(proof, key, "proof", errors)
+    config = proof.get("config_dependency")
+    if not isinstance(config, dict): errors.append("proof.config_dependency must be an object"); return
+    kind = config.get("kind")
+    if kind not in CONFIG_DEPENDENCIES: errors.append("proof.config_dependency.kind is invalid")
+    if kind in {"program_shipped_default", "supported_option"}:
+        require_text(config, "evidence", "proof.config_dependency", errors)
+        if config.get("precondition_grants_effect") is not False: errors.append(f"proof.config_dependency {kind} requires precondition_grants_effect false")
+
+
+def validate_route(candidate: dict[str, Any], errors: list[str]) -> None:
+    route = candidate.get("route")
+    if not isinstance(route, dict): errors.append("candidate.route must be an object"); return
+    for key in ("owner", "destination", "owner_evidence", "proof_acceptance_evidence"): require_text(route, key, "route", errors)
+    if route.get("type") not in ROUTE_TYPES: errors.append("route.type is invalid")
+    if route.get("verified") is not True: errors.append("route.verified must be true")
+    if route.get("proof_type_accepted") is not True: errors.append("route.proof_type_accepted must be true")
+
+
+def validate_novelty(candidate: dict[str, Any], errors: list[str]) -> None:
+    novelty = candidate.get("novelty")
+    if not isinstance(novelty, dict): errors.append("candidate.novelty must be an object"); return
+    require_text(novelty, "root_cause_fingerprint", "novelty", errors)
+    classification = novelty.get("classification")
+    if classification not in NOVELTY_CLASSIFICATIONS: errors.append("novelty.classification must be distinct, duplicate, or uncertain")
+    if novelty.get("private_duplicate_risk") not in PRIVATE_DUPLICATE_RISKS: errors.append("novelty.private_duplicate_risk must be unknown, low, medium, or high")
+    if classification == "distinct": require_text(novelty, "semantic_delta", "novelty", errors)
+    searches = novelty.get("searches")
+    if not isinstance(searches, list): errors.append("novelty.searches must be an array"); searches = []
+    seen: set[str] = set()
+    for i, search in enumerate(searches):
+        path = f"novelty.searches[{i}]"
+        if not isinstance(search, dict): errors.append(f"{path} must be an object"); continue
+        source = require_text(search, "source", path, errors)
+        if source:
+            if source in seen: errors.append(f"{path}.source duplicates another novelty search")
+            seen.add(source)
+        require_text(search, "query", path, errors)
+        result = search.get("result")
+        if result not in SEARCH_RESULTS: errors.append(f"{path}.result must be checked, no_match, or unavailable")
+        if result == "unavailable": require_text(search, "reason", path, errors)
+        require_search_evidence(search.get("evidence"), f"{path}.evidence", errors)
+    target = candidate.get("target") if isinstance(candidate.get("target"), dict) else {}
+    required = set(REQUIRED_COMMON_SEARCHES)
+    if target.get("asset_type") in {"repository", "library", "cli", "sdk"}: required.update(REQUIRED_REPOSITORY_SEARCHES)
+    missing = sorted(required - seen)
+    if missing: errors.append("novelty.searches is missing required channels: " + ", ".join(missing))
+    current = novelty.get("current_state")
+    if not isinstance(current, dict): errors.append("novelty.current_state must be an object")
     else:
-        module.validate_report(document, errors)
+        require_text(current, "ref", "novelty.current_state", errors)
+        if current.get("result") not in CURRENT_STATE_RESULTS: errors.append("novelty.current_state.result must be vulnerable, fixed, or unavailable")
+        if current.get("result") == "unavailable": require_text(current, "reason", "novelty.current_state", errors)
+        require_search_evidence(current.get("evidence"), "novelty.current_state.evidence", errors)
+
+
+def validate_claim_and_recovery(candidate: dict[str, Any], errors: list[str]) -> None:
+    claim = candidate.get("claim")
+    if not isinstance(claim, dict): errors.append("candidate.claim must be an object"); return
+    require_text(claim, "capability", "claim", errors); require_text(claim, "impact", "claim", errors)
+    if claim.get("severity_ceiling") not in MAX_SEVERITIES: errors.append("claim.severity_ceiling must be informational, low, medium, high, or critical")
+    require_string_list(claim.get("limitations"), "claim.limitations", errors)
+    recovery = candidate.get("recovery")
+    if not isinstance(recovery, dict): errors.append("candidate.recovery must be an object"); return
+    status = recovery.get("status")
+    if status not in RECOVERY_STATUSES: errors.append("recovery.status must be ready, recover, narrow, or operator_required"); return
+    unsupported = require_string_list(recovery.get("unsupported_claims"), "recovery.unsupported_claims", errors)
+    if status == "ready" and unsupported: errors.append("recovery.status ready requires unsupported_claims empty")
+    elif status != "ready": require_text(recovery, "next_action", "recovery", errors)
+    if status in {"recover", "operator_required"}: require_text(recovery, "required_artifact", "recovery", errors)
+    if status == "narrow" and not unsupported: errors.append("recovery.status narrow requires unsupported_claims")
+
+
+def validate_hardening(candidate: dict[str, Any], errors: list[str]) -> None:
+    hardening = candidate.get("hardening")
+    if not isinstance(hardening, dict): errors.append("candidate.hardening must be an object"); return
+    for key in ("scope_checked", "severity_reassessed", "proof_strengthened"): require_text(hardening, key, "hardening", errors)
+
+
+def validate_decision(candidate: dict[str, Any], errors: list[str]) -> None:
+    decision = candidate.get("decision")
+    if not isinstance(decision, dict): errors.append("candidate.decision must be an object"); return
+    verdict = decision.get("verdict"); gate = decision.get("gate")
+    if verdict not in VERDICTS: errors.append("decision.verdict must be REPORTABLE, HOLD, KILL, or ROUTE_ELSEWHERE"); return
+    if gate not in GATES: errors.append("decision.gate is invalid")
+    require_text(decision, "reason", "decision", errors)
+    failed = require_string_list(decision.get("failed_gates"), "decision.failed_gates", errors); missing = require_string_list(decision.get("missing_evidence"), "decision.missing_evidence", errors)
+    if any(item not in GATES for item in failed): errors.append("decision.failed_gates contains invalid gates")
+    if verdict == "REPORTABLE":
+        if gate != "reportability": errors.append("REPORTABLE requires decision.gate reportability")
+        if failed or missing: errors.append("REPORTABLE requires failed_gates and missing_evidence empty")
+    elif verdict == "HOLD":
+        if not missing: errors.append("HOLD requires decision.missing_evidence")
+        if failed: errors.append("HOLD requires decision.failed_gates empty")
+    elif verdict == "KILL":
+        if gate not in failed: errors.append("KILL requires decision.gate in decision.failed_gates")
+        if missing: errors.append("KILL requires decision.missing_evidence empty")
+    elif verdict == "ROUTE_ELSEWHERE":
+        if gate not in {"route", "ownership"}: errors.append("ROUTE_ELSEWHERE requires gate route or ownership")
+        if failed or missing: errors.append("ROUTE_ELSEWHERE requires failed_gates and missing_evidence empty")
+
+
+def validate_reportable(candidate: dict[str, Any], errors: list[str]) -> None:
+    decision = candidate.get("decision") if isinstance(candidate.get("decision"), dict) else {}
+    if decision.get("verdict") != "REPORTABLE": errors.append("report stage requires decision.verdict REPORTABLE"); return
+    attacker = candidate.get("attacker_model") if isinstance(candidate.get("attacker_model"), dict) else {}
+    if text(attacker.get("capability_before")) and attacker.get("capability_before") == attacker.get("capability_after"): errors.append("REPORTABLE requires a new attacker capability")
+    ref = candidate.get("strongest_refutation") if isinstance(candidate.get("strongest_refutation"), dict) else {}
+    if ref.get("result") != "refuted": errors.append("REPORTABLE requires strongest_refutation.result refuted")
+    proof = candidate.get("proof") if isinstance(candidate.get("proof"), dict) else {}
+    if proof.get("level") not in {"executable", "boundary"}: errors.append("REPORTABLE requires proof.level executable or boundary")
+    if proof.get("type") not in FINAL_PROOF_TYPES: errors.append("REPORTABLE requires an executable or authorized hosted proof type")
+    config = proof.get("config_dependency") if isinstance(proof.get("config_dependency"), dict) else {}
+    if config.get("kind") in {"operator_weakened", "test_only", "unknown"}: errors.append(f"proof.config_dependency {config.get('kind')} forbids REPORTABLE at the supported target boundary")
+    novelty = candidate.get("novelty") if isinstance(candidate.get("novelty"), dict) else {}
+    if novelty.get("classification") != "distinct": errors.append("REPORTABLE requires novelty.classification distinct")
+    current = novelty.get("current_state") if isinstance(novelty.get("current_state"), dict) else {}
+    if current.get("result") == "fixed": errors.append("REPORTABLE requires current_state not fixed")
+    if novelty.get("private_duplicate_risk") in {"medium", "high", "unknown"}: require_text(novelty, "collision_differentiator", "novelty", errors)
+    recovery = candidate.get("recovery") if isinstance(candidate.get("recovery"), dict) else {}
+    if recovery.get("status") in {"recover", "operator_required"}: errors.append(f"recovery.status {recovery.get('status')} forbids REPORTABLE")
+    if recovery.get("status") not in {"ready", "narrow"}: errors.append("REPORTABLE requires recovery.status ready or narrow")
+    claim = candidate.get("claim") if isinstance(candidate.get("claim"), dict) else {}
+    if text(attacker.get("capability_after")) and claim.get("capability") != attacker.get("capability_after"): errors.append("claim.capability must exactly match attacker_model.capability_after")
+
+
+def validate_candidate_target_contract(candidate: dict[str, Any], target: dict[str, Any], errors: list[str]) -> None:
+    proof = candidate.get("proof") if isinstance(candidate.get("proof"), dict) else {}
+    accepted = target.get("proof_policy", {}).get("accepted_proof_types"); accepted_set = set(accepted) if isinstance(accepted, list) else set()
+    if not PROOF_TYPE_TO_TARGET_POLICY.get(proof.get("type"), set()).intersection(accepted_set): errors.append("candidate proof.type is not accepted by the selected target proof policy")
+    route = candidate.get("route") if isinstance(candidate.get("route"), dict) else {}
+    if route.get("type") != ROUTE_TYPE_TO_CANDIDATE.get(target.get("route_type")): errors.append("candidate route.type does not match target route_type")
+    claim = candidate.get("claim") if isinstance(candidate.get("claim"), dict) else {}; target_max = target.get("scope", {}).get("max_severity"); candidate_max = claim.get("severity_ceiling")
+    if target_max in SEVERITY_RANK and candidate_max in SEVERITY_RANK and SEVERITY_RANK[candidate_max] > SEVERITY_RANK[target_max]: errors.append("candidate claim.severity_ceiling exceeds target.scope.max_severity")
+
+
+def validate_candidate(candidate: dict[str, Any], target: dict[str, Any], stage: str, errors: list[str], *, campaign: dict[str, Any] | None = None) -> None:
+    validate_candidate_schema(candidate, errors); validate_candidate_target_binding(candidate, target, errors); validate_campaign_binding(candidate, campaign, errors); validate_model(candidate, errors)
+    if stage == "model": return
+    validate_trace(candidate, errors); validate_refutation(candidate, errors); validate_proof(candidate, errors); validate_route(candidate, errors); validate_novelty(candidate, errors); validate_claim_and_recovery(candidate, errors); validate_decision(candidate, errors)
+    if stage == "decision": return
+    validate_hardening(candidate, errors); validate_reportable(candidate, errors); validate_candidate_target_contract(candidate, target, errors)

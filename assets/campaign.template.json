@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "campaign_id": "",
+  "target_id": "",
+  "mode": "bounded",
+  "status": "open",
+  "stop_condition": "",
+  "hypotheses": [
+    {
+      "hypothesis_id": "H-001",
+      "boundary": "",
+      "statement": "",
+      "priority": "high",
+      "status": "queued",
+      "candidate_id": null,
+      "verdict": null,
+      "reason": ""
+    }
+  ]
+}

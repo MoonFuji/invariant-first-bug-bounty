@@ -1,344 +1,249 @@
-# Methodology and Targeting
+# Methodology and targeting
 
-## Contents
+This reference expands the core reasoning gates without adding mandatory
+bookkeeping.
 
-1. Target and route selection
-2. Invariant-first source review
-3. Discovery techniques
-4. Contestability and duplicate risk
-5. Threat model and proof requirements
-6. Routing, severity, and report structure
-7. Terminal decisions
+## 1. Target selection
 
-## 1. Target and route selection
+Choose targets for provability, ownership, and expected value.
 
-Select for **provability, ownership, and contestability**, not headline severity.
+Before deep work, verify only what belongs in `target.json`:
 
-Before auditing, record in `target.json`:
+- exact asset/repository/revision;
+- authorization mode (`SOURCE_ONLY` or `PROGRAM_HOSTED`);
+- current scope and severity ceiling;
+- current accepted proof routes;
+- selected/hold/rotation decision.
 
-- The declared operating mode (`SOURCE_ONLY` by default, or explicitly authorized `PROGRAM_HOSTED`) in `target.operating_mode`, with its authorization basis in `target.scope.evidence`.
-- Current program status, asset, accepted bug classes, and scope evidence.
-- Exact repository and commit/release actually shipped or accepted by the program.
-- Whether a hosted instance, owned accounts, local deployment, device, or upstream advisory route is available.
-- The project that owns the suspected code and would ship its fix.
-- Payout eligibility and whether the payout rail is usable.
-- **Contestability** in `target.contestability`: use a platform asset count when visible, public issue/advisory history where that is the real collision surface, `private_unavailable` when the private pool cannot be inspected, or `not_applicable` with a reason. Never fabricate numeric zero from unavailable data.
-- Prior outcomes and the concrete coverage delta from earlier reviews. A first hunt still records that the search was assessed and found no prior local coverage.
+Duplicate pressure, prior outcomes, architecture notes, and hypothesis queues are
+research inputs. They are not prerequisites for selecting a technically valid
+target.
 
-Score candidates 1–5 on each axis:
+Useful ranking factors:
 
-| Axis | Weight | 5 | 1 |
-|---|---:|---|---|
-| Contestability | ×3 | Low-volume, searchable history | Invisible private pool, high volume, or hot class-cluster |
-| Exact proof available | ×3 | Live/real path and safe controls available | Only a statement-level trace |
-| Route ownership | ×3 | Destination clearly owns code and proof class | Dependency/ownership ambiguous |
-| Low contestability | ×3 | Product-specific invariant in under-reviewed code | Famous component or fresh-advisory hotspot |
-| Security-model leverage | ×2 | Stateful authz/logic/identity boundary | Generic isolated sink |
-| Verification path | ×1 | Runtime and tests can be exercised | Required environment is unavailable |
-| Payout reliability | ×1 | Paying, responsive, accessible | VDP, blocked rail, or unstable scope |
-
-A recent advisory is a **contestability penalty** unless the candidate proves a different semantic invariant, enforcement path, or affected asset. Fresh feature code and newly added scope can be attractive; a famous fresh CVE is usually crowded.
-
-**Saturation is a strong prior, but the finding's *collision rate* is what actually duplicates — not bug obviousness.** Prefer a disclosing, lower-volume program where a public deduplication review is possible, and treat a non-disclosing program as `private_duplicate_risk` ≥ `medium` because the private report pool is invisible. On saturated targets, require a concrete low-collision differentiator: a distinct cross-layer invariant, an unaffected asset, or a materially different enforcement path. An unusual payload against the same public root cause is not enough. Novelty is the tie-breaker within a well-chosen target and the deciding factor when every available target is crowded.
-
-This is a targeting prior, not a universal law; recalibrate it against the current program, platform, disclosure model, and contestability. On a non-disclosing program, `novelty.classification: distinct` means *distinct from the public pool only*. It is not evidence about private reports. A high-duplicate-context finding reaches `REPORTABLE` only when `novelty.collision_differentiator` explains why the root cause is unlikely to collide.
-
-Route classes:
-
-- **Hosted/grey-box:** use only in `PROGRAM_HOSTED`; read source to locate the invariant, then use explicitly permitted owned accounts/data or an owned deployment.
-- **Source-code program:** reproduce the exact shipped code path and verify the program accepts local/source evidence.
-- **Upstream library/SDK:** report to the project that owns the code; obtain a fix/advisory/CVE when required, then use IBB only if eligible.
-- **Black-box:** reconstruct principals, objects, state transitions, and authorization from owned-account behavior before testing.
-
-## 2. Invariant-first source review
-
-Comprehension is selective across the repository but exhaustive along the chosen invariant. Do not read every file, but read every connected file on the source-to-effect path: do not stop at the first sink, and do not infer an unread link from training priors. When a trace hits a dead end, pivot to another sink or invariant rather than abandoning the target. The Depth contract in `SKILL.md` governs when the trace is complete enough to stop.
-
-### 2.1 Build the model
-
-Record:
-
-| Element | Questions |
+| Factor | Prefer |
 |---|---|
-| Principals | Who acts: anonymous, user, tenant admin, service, peer, tool, device? |
-| Protected assets | What data, money, identity, execution, quota, or integrity state is protected? |
-| Trust boundaries | Which actor-to-actor or component-to-component transition must be isolated? |
-| State stores | Which DB constraint, cache key, filesystem path, token store, queue, or device state enforces it? |
-| Enforcement points | Where are authentication, authorization, canonicalization, uniqueness, and state transitions checked? |
-| Invariant | What must remain true across every path? |
+| Proofability | exact executable or authorized hosted path available |
+| Ownership | destination clearly owns the code/property |
+| Reachability | attacker-supported ingress is concrete |
+| Impact | target-owned capability delta can be demonstrated |
+| Duplicate pressure | searchable lower-volume surface |
+| Verification cost | safe controls and fixtures are available |
 
-Good invariants are falsifiable:
+A crowded program is a ranking penalty, not a scope failure.
 
-- A verification identifier can be consumed once across all equivalent encodings.
-- A tenant can read or mutate only objects it owns or was explicitly granted.
-- A denied/ask tool event cannot execute a consequential local tool.
-- Internal-only RPC methods cannot be reached through a public listener.
-- A caller cannot redirect a victim-owned credential to an attacker endpoint.
+## 2. Invariant-first review
 
-### 2.2 Trace end to end
+Comprehension is selective across the repository but exhaustive along the chosen
+invariant. Read every claim-critical link on the source-to-effect path.
 
-Follow this spine:
+Model:
+
+- principals;
+- protected assets;
+- trust boundaries;
+- authoritative state stores;
+- authentication/authorization/canonicalization points;
+- one falsifiable invariant.
+
+Examples:
+
+- A tenant can read or mutate only objects it owns or was granted.
+- A one-time verifier cannot be consumed twice across equivalent encodings.
+- A denied tool event cannot execute a consequential local tool.
+- Internal RPC methods cannot be reached through a public listener.
+
+Trace:
 
 ```text
-attacker-controlled representation
-  → parser / transport / entrypoint
-  → authentication
-  → normalization or canonicalization
-  → authorization or validation
-  → lookup / state read
-  → mutation / external action
-  → persistence / uniqueness / cache
-  → observable security effect
+attacker representation
+→ parser/transport
+→ authentication
+→ normalization
+→ authorization/validation
+→ state lookup/transition
+→ persistence/external effect
+→ observable capability
 ```
 
-Explicitly mark `not applicable` where a stage truly does not exist. Do not leave a load-bearing stage implicit.
+Check at least one meaningful sibling or alternate path. The sibling is evidence
+only when you explain why its enforcement differs.
 
-Trace at least one sibling:
+## 3. Discovery lenses
 
-- create/read/update/delete/list/export/preview/share
-- v1/v2, web/mobile, sync/async, public/internal
-- SDKs in different languages
-- check/read path versus write/conflict path
-- released branch versus main/fix branch
+Apply lenses that fit the architecture:
 
-The sibling is evidence only after explaining why the difference changes enforcement. A missing call or different regex is not automatically a vulnerability.
+- representation asymmetry between validation and later use;
+- object-identity confusion;
+- enforcement split between transports/versions;
+- state-machine replay/reorder/race;
+- trust-mode mismatch;
+- TOCTOU/uniqueness gaps;
+- parser/protocol differentials;
+- stored/second-order interpretation;
+- supply-chain caller-contract mismatch.
 
-### 2.3 High-yield invariant lenses
+Broad grep is coverage, not proof. A sink becomes interesting only after an
+attacker-controlled source and target-owned boundary are established.
 
-Apply lenses only when the architecture contains the primitive:
+## 4. Capability delta
 
-- **Representation asymmetry:** validation canonicalizes but storage, uniqueness, ACL, cache, idempotency, or rate-limit keys use a raw form.
-- **Confused object identity:** authorize the URL object but act on a body object, alias, foreign key, or resolved sibling.
-- **Enforcement split:** UI/public/v2 path checks a restriction while API/internal/v1/import/export path omits it.
-- **State-machine gap:** a transition is legal from an impossible state, repeated, reordered, or raced.
-- **Trust-mode mismatch:** a public/untrusted caller reaches an internal/trusted path or toggles the trust bit.
-- **TOCTOU/uniqueness:** check-then-write or read-then-act leaves a concurrency window not closed by the authoritative constraint.
-- **Parser differential:** security validation and the consuming parser disagree on the same bytes or representation.
+Write:
 
-Mine a confirmed invariant across meaningful siblings before rotating. Do not rotate merely to sample another class.
+1. attacker starts with `<access>`;
+2. attacker controls `<input/state>`;
+3. target performs `<security-relevant action>`;
+4. attacker gains `<new capability>`.
 
-## 3. Discovery techniques
+If 4 is already included in 1, the candidate dies or must be narrowed.
 
-Choose techniques after the model identifies relevant primitives:
+For filesystem/process claims record runtime identity, permissions, sandbox,
+exact path, and execution trigger. Controlling a pathname does not imply write
+permission.
 
-- **Authz trace:** follow one protected resource through every operation and identity source.
-- **State transition audit:** derive allowed states, then test repeat, reorder, cancellation, retry, and race behavior.
-- **Security-test gap:** compare security tests with reachable siblings and missing negative cases.
-- **Fix-diff analysis:** extract the invariant a patch intended to restore, then inspect uncovered siblings and mirrors. Treat the hotspot as highly contested.
-- **Variant analysis:** after confirming one causal pattern, encode semantic source/flow/sink or structural enforcement differences with CodeQL/Semgrep.
-- **Sensitive-operation search:** use only when the model exposes a relevant attacker-controlled source and boundary. Trace every hit to effect.
-- **History analysis:** inspect blame, changelog, branches, releases, open/closed PRs, issues, advisories, and `git log -p` around the enforcement point.
+## 5. Strongest refutation
 
-Broad recon is coverage, not discovery proof. Run `scripts/recon-sweep.sh` only with a model-ready candidate.
+Test the explanation most likely to kill the report:
 
-## 4. Contestability and duplicate risk
+- input is trusted operator/deployer state;
+- caller already owns the capability;
+- production adds an authoritative re-check;
+- path is unreachable under the supported contract;
+- behavior is explicitly documented by design;
+- another project owns the property;
+- precondition already grants the claimed effect.
 
-Private duplicate pools cannot be queried. Deduplication is probability management, not proof of uniqueness.
+A terminal refutation is not defeated by a third-party misuse scenario. If
+target-owned evidence genuinely defeats the objection, the objection is
+non-terminal.
 
-### 4.1 Fingerprint root cause
+## 6. Proof quality
 
-Use:
+Use three proof levels:
+
+### Primitive
+
+The mechanism can produce the effect. Useful for shaping the hypothesis, not
+enough for a report.
+
+### Executable
+
+The exact pinned/shipped executable or method, real invocation, and relevant
+configuration produce the effect.
+
+### Boundary
+
+An actor allowed by the destination can supply the exploit-critical
+representation through the product-facing path and cross a target-owned
+boundary.
+
+Every reportable proof needs:
+
+- exact version/revision;
+- command/setup;
+- observable result;
+- negative control;
+- production/destination relevance.
+
+Configuration is a precondition. A shipped default or supported option may be
+valid when target-owned and not itself granting the effect. Operator-weakened,
+test-only, or unknown configurations do not establish the supported boundary.
+
+## 7. Ownership and routing
+
+Before reporting, answer:
+
+- Which repository/component contains the fault?
+- Which maintainer would change it?
+- Which release would carry the fix?
+- Does the destination own that asset/property?
+- Does it accept the available proof type?
+
+Delegation is not ownership. Use `ROUTE_ELSEWHERE` when another project owns the
+fix.
+
+## 8. Novelty and duplicate risk
+
+Fingerprint:
 
 ```text
 boundary | primitive | invariant | effect
 ```
 
-Example:
+Search semantics, not titles/CWEs.
 
-```text
-tenant A→tenant B | global-id lookup | owner-only read | private invoice disclosure
-```
+For repository-backed targets, inspect:
 
-Compare semantics, not titles or CWE labels.
+1. your own prior outcomes;
+2. program disclosures;
+3. upstream commits;
+4. open/closed upstream issues;
+5. upstream pull requests;
+6. recent advisories;
+7. current default branch.
 
-### 4.2 Search in this order
+Record the query and auditable artifact for each search. An unavailable source
+is uncertainty, not zero results.
 
-1. **Your own outcomes:** inventory valid, duplicate, informative, and routed reports. Record fingerprints and duplicate references.
-2. **Program history:** disclosed reports for the component, invariant, endpoint, and effect.
-3. **Cross-program history:** search the primitive and invariant to estimate how automated/crowded the class is.
-4. **Upstream truth:** GHSA/CVE, security advisories, issue/PR history, changelog, release notes, branches, and exact-line history.
-5. **Sibling implementations:** language SDKs, old APIs, forks, and mirror repos may show an existing fix or common backend ownership.
+Interpretation:
 
-For each required novelty source (`own_reports`, `program_disclosures`, `upstream_history`, and `recent_advisories`), store the query, check time, and exactly one result:
+- same boundary/primitive/invariant/effect: probable duplicate;
+- same component, different invariant/effect: document the delta;
+- no public match: public novelty only; private duplicates remain possible;
+- current branch fixed: do not report as current without a route/version reason;
+- wrong project owns fix: route elsewhere.
 
-- `checked`: a close match was opened; record its identifier, fingerprint, and comparison.
-- `no_match`: the source was searched and returned no relevant match.
-- `unavailable`: the source could not be searched; record why.
+High or unknown private-duplicate risk should carry a concrete collision
+differentiator.
 
-Rank close matches across sources. Store one globally `closest_known_match`, compare its boundary, primitive, invariant, and effect separately, then write one candidate-level semantic delta. Do not treat four source-specific “different” claims as a substitute for selecting the strongest comparison.
+## 9. Narrowing and recovery
 
-### 4.3 Interpret results
+Do not force every real primitive to support the strongest imagined deployment
+story.
 
-- Exact same boundary, primitive, invariant, and effect: probable coverage; `KILL` unless authoritative evidence proves separation.
-- Same component but different invariant/effect: document the semantic delta; do not assume either duplicate or novelty.
-- No public match: record `private_duplicate_risk`; never call it novel solely from absence.
-- Fresh public advisory/famous fix: default risk `high` until a distinct invariant and unaffected fix path are proven.
-- Wrong project owns fix: `ROUTE_ELSEWHERE`, even if the product delegates to the vulnerable dependency.
-- Known matching root cause: classify `duplicate` and `KILL @ novelty`.
-- Incomplete or unavailable comparison evidence: classify `uncertain` and `HOLD @ novelty`.
-- Report-stage evidence supports a distinct root cause: classify `distinct`; this still does not reveal private duplicates.
+- `ready`: bounded claim is complete.
+- `recover`: an available artifact can repair the missing proof.
+- `narrow`: a lower security-relevant claim survives; list unsupported
+  extensions.
+- `operator_required`: next proof needs unavailable authorized environment.
 
-## 5. Threat model and proof requirements
+`recover` and `operator_required` are not reportable.
 
-### 5.1 Capability delta
+## 10. Severity
 
-Write four sentences:
+Score the demonstrated capability, not the bug class or theoretical maximum.
 
-1. The attacker starts with `<access/capability>`.
-2. The attacker controls `<specific input/state>`.
-3. The asset performs `<security-relevant action>`.
-4. The attacker gains `<new data/state/execution>`.
+- state attacker privileges honestly;
+- separate demonstrated from conditional consequences;
+- account for victim action, races, configuration, and unusual preconditions;
+- do not raise severity for an unproven chain;
+- keep the candidate `severity_ceiling` at or below current scope limits.
 
-If sentence 4 equals sentence 1, there is no demonstrated security gain.
+The final submission-time preflight refreshes the current program severity cap.
 
-For every proposed attacker route, name the target-supported ingress and the evidence that the actor can reach it. “Compromised storage,” “leaked credential,” “over-permissioned backend,” and “MITM under weak configuration” are scenario assumptions, not source provenance. Determine whether the program treats that component as adversarial, whether a less-trusted principal can influence it through an owned path, and what authority the assumed compromise already grants.
+## 11. Report structure
 
-### 5.2 Strongest refutation
+A useful report normally contains:
 
-Actively test the explanation most likely to kill the report:
+1. bounded title;
+2. exact asset/version;
+3. attacker model and capability delta;
+4. reproduction steps and command;
+5. observed result and negative control;
+6. security impact;
+7. scope/severity rationale;
+8. limitations/unsupported extensions;
+9. fix-owner context where useful.
 
-- The attacker already controls the endpoint, peer, config, host, or secret.
-- The allegedly private object is shared/public by contract.
-- Production enables a control absent from templates/tests.
-- The service never emits the fabricated event shape.
-- A safe authoritative layer rechecks before state changes.
-- The dangerous behavior requires downstream misuse or a caller already violating the API contract.
-- The project explicitly assigns the boundary to the deployer/caller.
-- Target-authored policy, documentation, README text, or prior issue history declares the relevant input, peer, or behavior trusted or by design.
+The report is the semantic submission artifact. `submission.json` is only an
+exact-file manifest plus fresh preflight.
 
-Quote the strongest target-authored statement and resolve its exact scope against the claimed effect. A statement that trusts source-generated SQL on the destination does not automatically settle whether the source may read the migration client's filesystem; conversely, a contract that clearly assigns the entire peer or protocol to the caller is terminal counterevidence. Do not paraphrase a narrow statement into either a broader exemption or a narrower one.
+## 12. Terminal decisions
 
-Record one of:
+- `REPORTABLE`: bounded candidate cleared all technical gates.
+- `HOLD`: named evidence is missing.
+- `KILL`: this invariant failed a gate.
+- `ROUTE_ELSEWHERE`: another disclosure rail owns the fix.
 
-- `refuted`: independent evidence disproves the benign explanation.
-- `confirmed`: the explanation defeats or materially downgrades the candidate.
-- `unresolved`: more evidence is required; verdict must remain `HOLD`.
-
-### 5.3 Proof quality
-
-Proof must exercise the exact load-bearing behavior and capture an observable effect.
-
-Keep three proof levels separate:
-
-1. **Primitive fidelity:** a compatible parser, client, runtime, or helper containing copied target lines demonstrates that the underlying mechanism can produce the effect. This supports a hypothesis but does not establish the target path.
-2. **Executable fidelity:** the exact pinned/shipped executable is invoked through the target's real command/configuration builder and produces the effect. Record the version, generated command or config, observable artifact, negative control, and exit status.
-3. **Boundary fidelity:** the actor allowed by the program can supply the exact representation through the product-facing interface, every validation/storage/serialization step preserves the load-bearing bytes or semantics, and the effect crosses a target-owned boundary.
-
-Clear the level required by the claimed destination and impact. Do not use primitive fidelity to claim executable fidelity, or executable fidelity to claim a managed-service boundary. Product documentation showing that customers provide a hostname, username, URI, schema, archive, or similar field is a surface anchor only; it does not prove that control characters, encodings, alternate representations, or other load-bearing values survive the control plane.
-
-For a managed product backed by public source, trace this carrier explicitly:
-
-```text
-customer-controlled representation
-  → public API/CLI/console contract
-  → request validation and normalization
-  → persistence or task payload
-  → serialization / environment / generated config
-  → shipped executable invocation
-  → target-owned observable effect
-```
-
-If any load-bearing transition is unavailable, use `HOLD @ reachability` or `HOLD @ proof` and name it. Do not fill the gap with an assumption about an internal deployment.
-
-Acceptable proof varies by route:
-
-- Hosted app/API: in `PROGRAM_HOSTED`, two owned identities or an owned instance, planted marker/state change, and anonymous/nonexistent controls when explicitly permitted and relevant.
-- Source-code program: executable exact path using shipped configuration, plus evidence that the destination treats that path as its boundary.
-- Library/SDK: realistic caller contract and executable regression; upstream fix/advisory/CVE may be the accepted proof rail.
-- Parser/CLI: real parser/runtime and a file, process, or state effect—not only acceptance of an option.
-- Firmware/hardware: real device/emulator/enforcement behavior accepted by the program.
-- AI/MCP: authentic reachable event and consequential tool effect; synthetic service/model output alone proves only unsafe handling of fabricated input.
-
-Every proof needs a negative control that would fail if the claimed root cause were wrong.
-
-Trace each claimed effect independently. A write path, copy path, cleanup path, and delete path may contain the same join or sink while consuming values from different sources. Do not transfer taint, reachability, or capability from one sibling to another without its own source-to-effect trace.
-
-A nonzero process exit does not erase an effect that completed and was independently captured before the failure. Preserve the exit code and ordering evidence, explain the fixture limitation, and scope the claim to the completed effect. Do not call a partial protocol fixture a successful end-to-end product workflow.
-
-## 6. Routing, severity, and report structure
-
-### 6.1 Route ownership
-
-Before reporting, answer:
-
-- Which repository contains the faulty implementation?
-- Which maintainer would change it?
-- Which release would carry the fix?
-- Does the destination list that asset or dependency?
-- Does the destination accept the available proof type?
-
-Delegation is not ownership. A wrapper around a vulnerable dependency does not automatically make the wrapper's program the correct route.
-
-### 6.2 Severity
-
-Score the reproduced capability, not the bug class or theoretical maximum.
-
-- Record attacker privileges and non-default requirements honestly.
-- Use confidentiality/integrity/availability effects actually captured.
-- Treat races, victim action, deployment configuration, and unusual preconditions as complexity/requirements.
-- Do not raise severity because a stronger unproven chain might exist.
-- Separate impact statements into `demonstrated` and `conditional`. A local canary can demonstrate the executable's file-read capability; it does not by itself demonstrate managed-host reachability, cloud credentials, cross-tenant data, or another target-owned sensitive asset. Conditional consequences may guide the next proof, but they do not determine the submitted severity.
-- Separate attacker control over a path from permission to modify that path. Record the runtime UID/GID, container or sandbox boundary, filesystem permissions, capabilities, and the exact execution trigger before claiming arbitrary write, privileged overwrite, or RCE. A constrained privileged subprocess elevates only that subprocess and its accepted arguments; it does not retroactively elevate earlier file operations.
-
-### 6.3 Report structure
-
-Generate a report only after:
-
-```bash
-python scripts/validate_hunt.py --stage report --target-ledger target.json \
-  --candidate-review candidate-review.json candidate.json
-```
-
-Use:
-
-```markdown
-# [Class] in [component] allows [attacker] to [reproduced impact]
-
-**Asset/version:** <exact scope asset and commit/release>
-**Route:** <program/upstream/IBB and why it owns the fix>
-**Severity:** <rating, CWE/VRT, vector and short justification>
-
-## Summary
-What invariant fails, for which attacker, with what captured effect.
-
-## Security invariant and root cause
-Show the complete source-to-enforcement trace with file:line evidence.
-
-## Threat model
-Starting access, controlled value, capability before/after, victim action, and owned boundary.
-
-## Reproduction
-Minimal setup, exact trigger, observed effect, artifact, and negative controls.
-
-## Novelty and semantic delta
-Root-cause fingerprint, searches performed, close matches, and the exact difference.
-
-## Impact
-Only the reproduced consequence.
-
-## Limitations
-What was not tested, unresolved input-carrier or deployment assumptions, process failures after the captured effect, and residual private-duplicate risk.
-
-## Remediation
-Fix the authoritative enforcement point and add the demonstrated regression control.
-```
-
-**Report hygiene (self-contained rule).** The report must stand alone: a triager understands the vulnerability, trace, impact, and reproduction without opening any working file. Ban pointer phrases ("see the draft/notes", "for the full trace see …") and internal identifiers (`candidate_id`, gate/stage tags) — inline the content instead. Pin every repository link to the exact commit **SHA**, never a branch like `main`, so it stays stable. Distinguish observed behavior (from a captured evidence artifact) from inferred impact. Embed the smallest snippet that proves the bug. Never write that a PoC executed unless an artifact shows it — otherwise label it theoretical or blocked with the reason.
-
-Candidate reportability is not final report readiness. Put the finished Markdown report and every attachment in a submission bundle, repeat the live scope and proof-policy preflight, and obtain a second review bound to the exact file digests. Any edit after review invalidates that review. A successful submission-stage validation means ready for the user's final platform check, not submitted.
-
-## 7. Terminal decisions
-
-After setting any verdict, validate the evidence appropriate to where research ended:
-
-```bash
-python scripts/validate_hunt.py --stage decision --target-ledger target.json candidate.json
-```
-
-- **REPORTABLE @ reportability:** full trace, proof, route, and novelty validation passes with real artifacts.
-- **HOLD:** record the current gate and concrete missing evidence; do not invent current or downstream fields.
-- **KILL:** record the failed gate and evidence through that gate; do not continue only to fill later fields.
-- **ROUTE_ELSEWHERE:** name the correct owner and route evidence.
-- **NO_REPORTABLE_FINDING:** preserve the completed safe trace so future agents do not repeat it.
-
-Before changing a verdict, append the prior decision and the evidence that changed it to `decision_history`. Do not transform a non-reportable verdict into REPORTABLE by changing wording. Only new independent evidence may change a gate.
+One `KILL` never means the target is clean. Use optional campaign mode for broad
+coverage or exhausted-target conclusions.

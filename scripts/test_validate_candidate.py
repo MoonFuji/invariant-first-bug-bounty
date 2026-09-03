@@ -1,1204 +1,183 @@
 #!/usr/bin/env python3
-"""Synthetic acceptance tests for the import-only candidate validator core.
-
-The cases preserve earlier-schema failure modes so manual upgrades fail loudly:
-  - a terminal refutation with no resolution attacking the owned boundary;
-  - a `distinct` novelty claim backed only by `git log`, skipping upstream
-    issue and pull-request searches.
-
-Schema-5 cases (K-W) cover the report-stage process gates: report stage now
-requires schema_version >= 5 (Q), and a finding matching a documented intentional
-behavior, a cold verification that did not CONFIRM, an Advocate whose own defense
-blocks the finding, a CONFIRMED verdict contradicted by a killed subclaim or an
-empty re-derived severity, an Advocate that searched no layers, an empty intent
-corpus, and an FP-pattern rebuttal with no evidence each forbid REPORTABLE. The
-report-stage accepts are migrated to schema 5; legacy schema-3/4 candidates still
-validate at the model and decision stages (legacy, G-J).
-
-Cases XA-XF cover the v0.4.3 additions: a schema-5 NO_REPORTABLE_FINDING requires a
-checkable exhaustion record (tried[] + the five depth_contract fields), and a CONFIRMED
-cold_verify requires a persisted sub-claim decomposition with every link supported.
-
-Cases YD-YE cover v0.4.4 (intent corpus owed for NO_REPORTABLE_FINDING; all-clean public
-novelty cannot claim low private risk). Cases ZA-ZM cover v0.4.5/v0.4.6: the target.saturation
-dedup-visibility gate (non-disclosing -> private_duplicate_risk >= medium), the
-collision_differentiator required in a high-dup context, the config_dependency demonstrated-impact
-gate, per-subclaim evidence, and the model-stage saturation assessment. Cases AA-AE cover v0.5.0:
-a REPORTABLE and a NO_REPORTABLE_FINDING may not be self-certified (adversarial_review.reviewer must
-be an independent id or 'owed', never 'self'), and a REPORTABLE requires a completed hardening pass.
-(The v0.4.4 commit block and the patch_bypass block were removed in v0.5.0.)
-
-Run: python3 scripts/test_validate_candidate.py
-Exit 0 = all cases behaved as specified.
-"""
+"""Focused regressions for the lean schema-7 candidate gates."""
+from __future__ import annotations
 
 import copy
-from hunt_validation.candidate import (
-    load_candidate_validator,
-    run_candidate_validator,
-    validate_candidate_schema,
-    validate_candidate_timestamps,
-    validate_claim_scope_and_recovery,
-)
 
-VALIDATOR = load_candidate_validator()
+from hunt_validation.candidate import validate_candidate
+from hunt_validation.target import validate_target
+from test_fixtures import valid_candidate, valid_target
 
 
-def run(document, stage):
-    errors = []
-    if stage == "target":
-        VALIDATOR.validate_target(document, errors)
-    else:
-        if document.get("schema_version") == 6:
-            validate_candidate_schema(document, errors)
-        run_candidate_validator(VALIDATOR, document, stage, errors)
-        if document.get("schema_version") == 6:
-            validate_claim_scope_and_recovery(document, errors)
-            validate_candidate_timestamps(document, errors)
-    return (2, "\n".join(errors)) if errors else (0, "")
+def errors_for(candidate: dict, *, stage: str = "report", target: dict | None = None) -> list[str]:
+    t = target or valid_target()
+    errors: list[str] = []
+    validate_target(t, errors)
+    validate_candidate(candidate, t, stage, errors)
+    return errors
 
 
-def evidence(method, artifact):
-    return {"method": method, "query": "q", "artifact": artifact}
+def assert_reject(candidate: dict, fragment: str, *, target: dict | None = None) -> None:
+    errors = errors_for(candidate, target=target)
+    assert any(fragment in error for error in errors), errors
 
 
-def novelty_check(source, result="no_match"):
-    check = {
-        "source": source,
-        "query": "q",
-        "checked_at": "2026-08-08",
-        "result": result,
-        "closest_match": None,
-        "evidence": evidence(f"{source}_search", f"https://example/{source}"),
-    }
-    if result == "unavailable":
-        check["reason"] = "not applicable"
-        check.pop("evidence", None)
-    return check
+def test_reportable_candidate_accepts() -> None:
+    assert not errors_for(valid_candidate())
 
 
-def upstream_channels(results=("no_match", "no_match", "no_match")):
-    names = ("commits", "issues", "pull_requests")
-    channels = []
-    for name, result in zip(names, results):
-        channel = {
-            "channel": name,
-            "query": f"{name} q",
-            "result": result,
-            "closest_match": None,
-            "evidence": evidence(f"github_{name}_search", f"https://github.com/o/r/{name}"),
-        }
-        channels.append(channel)
-    return channels
+def test_capability_delta_is_load_bearing() -> None:
+    doc = valid_candidate()
+    doc["attacker_model"]["capability_after"] = doc["attacker_model"]["capability_before"]
+    doc["claim"]["capability"] = doc["attacker_model"]["capability_after"]
+    assert_reject(doc, "new attacker capability")
 
 
-def baseline():
-    """A fully valid schema-4 REPORTABLE candidate: the golden ACCEPT."""
-    upstream = novelty_check("upstream_history")
-    upstream["channels"] = upstream_channels()
-    return {
-        "schema_version": 4,
-        "candidate_id": "test-baseline",
-        "decision_history": [],
-        "target": {
-            "operating_mode": "SOURCE_ONLY",
-            "program": "p",
-            "asset": "a",
-            "repository": "github.com/o/r",
-            "commit": "abc",
-            "scope_evidence": "e",
-            "scope_checked_at": "2026-08-08",
-            "saturation": {"reports_last_90d": 40, "discloses_reports": True, "hot_cluster": False},
-        },
-        "model": {
-            "principals": ["x"],
-            "protected_assets": ["x"],
-            "trust_boundaries": ["x"],
-            "state_stores": ["x"],
-            "security_invariant": "inv",
-            "enforcement_points": ["x"],
-        },
-        "trace": {
-            "entrypoint": "e",
-            "attacker_input": "i",
-            "validation_path": "v",
-            "authorization_path": "a",
-            "state_transition": "s",
-            "persistence_path": "p",
-            "observable_effect": "o",
-            "sibling_paths": ["s"],
-        },
-        "threat_model": {
-            "attacker_starting_access": "low",
-            "attacker_controls": "input",
-            "victim_action": "runs",
-            "capability_before": "cannot X",
-            "capability_after": "can X",
-            "asset_owned_boundary": "b",
-            "strongest_refutation": {
-                "claim": "maybe attacker already controls the sink",
-                "kind": "non_terminal",
-                "evidence": "the sink looks caller-influenced",
-                "resolution": "the target derives the sink server-side; caller cannot set it",
-                "resolution_source": "target_owned",
-                "result": "refuted",
-            },
-        },
-        "proof": {
-            "type": "executable-local-exact-path",
-            "artifact": "poc.py",
-            "command": "python poc.py",
-            "observed_result": "boundary crossed",
-            "negative_controls": ["benign stays put"],
-            "production_relevance": "real path",
-            "config_dependency": "none",
-        },
-        "route": {
-            "owning_project": "o/r",
-            "owner_evidence": "in-repo",
-            "submission_target": "program",
-            "type": "program",
-            "owner_verified": True,
-            "proof_type_accepted": True,
-            "proof_acceptance_evidence": "source program accepts local proof",
-            "scope_verified": True,
-        },
-        "novelty": {
-            "root_cause_fingerprint": "boundary|primitive|invariant|effect",
-            "checks": [
-                novelty_check("own_reports"),
-                novelty_check("program_disclosures"),
-                upstream,
-                novelty_check("recent_advisories"),
-            ],
-            "closest_known_match": None,
-            "semantic_delta": "new root cause",
-            "classification": "distinct",
-            "private_duplicate_risk": "medium",
-            "current_upstream_state": {
-                "ref": "main@abc123",
-                "checked_at": "2026-08-08",
-                "path": "lib/x.rb:1",
-                "result": "vulnerable",
-                "evidence": evidence("gh_api_contents", "https://github.com/o/r/blob/main/lib/x.rb#L1"),
-            },
-        },
-        "decision": {
-            "verdict": "REPORTABLE",
-            "gate": "reportability",
-            "failed_gates": [],
-            "missing_evidence": [],
-            "reason": "all gates cleared",
-            "decided_at": "2026-08-08",
-        },
-    }
+def test_terminal_refutation_cannot_be_rubber_stamped() -> None:
+    doc = valid_candidate()
+    doc["strongest_refutation"]["kind"] = "target_does_not_own_security_property"
+    assert_reject(doc, "terminal refutation cannot be marked refuted")
 
 
-def v5_process_blocks():
-    """The schema-5 ideation + self-review blocks in their REPORTABLE-passing state."""
-    return {
-        "hypothesis_queue": [
-            {"id": "H-01", "title": "cross-mode chain", "creativity_signal": "non-obvious"}
-        ],
-        "intent_corpus": {
-            "checked_at": "2026-08-08",
-            "sources": ["SECURITY.md"],
-            "intentional_behaviors": [],
-            "acknowledged_risks": [{"quote": "auth bypass is in scope", "source": "SECURITY.md"}],
-            "finding_match": "none",
-        },
-        "adversarial_review": {
-            "reviewer": "independent-verifier-session-7f3a",
-            "advocate": {
-                "layers_checked": ["framework", "application"],
-                "fp_pattern_hits": [],
-                "strongest_defense": "no layer blocks the traced path",
-                "blocks": False,
-            },
-            "cold_verify": {
-                "verdict": "CONFIRMED",
-                "rederived_severity": "high",
-                "killed_subclaim": None,
-                "subclaims": [
-                    {"claim": "attacker controls the report id", "status": "supported",
-                     "evidence": "routes.rb:14 GET /reports/:id -> params[:id]"},
-                    {"claim": "id reaches the query with no tenant filter", "status": "supported",
-                     "evidence": "report_controller.rb:12 Report.find(params[:id])"},
-                    {"claim": "the row is returned cross-tenant", "status": "supported",
-                     "evidence": "poc.sh output: tenant-A token reads tenant-B canary"},
-                ],
-            },
-            "causal": [
-                {
-                    "protection": "input length clamp",
-                    "intervention": "removing it still reaches the sink",
-                    "counterfactual": "never triggered by normal traffic",
-                    "confounder": "in reviewed code, not upstream",
-                    "fragility": "fragile",
-                }
-            ],
-        },
-        "variant_sweep": {
-            "flow_shape": "request -> join -> sql",
-            "grep_artifact": "/tmp/sweep.txt",
-            "siblings_checked": ["cleanup path"],
-            "alternate_transports_checked": ["grpc", "queue"],
-            "variants_found": [],
-        },
-        "hardening": {
-            "status": "done",
-            "reviewer": "independent-hardener-session-9c2b",
-            "widened_radius": "checked all three tenant-scoped controllers; only reports/ affected",
-            "escalated_severity": "confirmed cross-tenant read, not just enumeration; High not Medium",
-            "deepened_poc": "poc.sh proves canary read across two owned tenants with controls",
-        },
-    }
+def test_unresolved_refutation_blocks_reporting() -> None:
+    doc = valid_candidate()
+    doc["strongest_refutation"]["result"] = "unresolved"
+    assert_reject(doc, "requires strongest_refutation.result refuted")
 
 
-def baseline_v5():
-    """A schema-5 REPORTABLE candidate with the process gates satisfied: the golden v5 ACCEPT."""
-    doc = baseline()
-    doc["schema_version"] = 5
-    doc.update(v5_process_blocks())
-    return doc
+def test_proof_must_reach_executable_boundary() -> None:
+    doc = valid_candidate()
+    doc["proof"]["level"] = "primitive"
+    assert_reject(doc, "proof.level executable or boundary")
 
 
-def baseline_v6():
-    """A schema-6 REPORTABLE candidate with a bounded claim and no unresolved recovery."""
-    doc = baseline_v5()
-    doc["schema_version"] = 6
-    doc.update(
-        {
-            "campaign_id": "campaign-example-a-abc",
-            "target_fingerprint": "example-a-abc",
-            "boundary_id": "boundary-reports",
-            "hypothesis_id": "H-001",
-            "claim_scope": {
-                "highest_proven_rung": "demonstrated_impact",
-                "demonstrated_capability": "read a report owned by another test tenant",
-                "demonstrated_impact": "cross-tenant disclosure of an owned canary",
-                "unsupported_extensions": [],
-                "severity_ceiling": "high",
-            },
-            "recovery": {
-                "classification": "NONE",
-                "failed_rung": "",
-                "next_action": "",
-                "required_artifact": "",
-                "surviving_claim": "",
-            },
-        }
-    )
-    doc["decision"]["decided_at"] = "2026-08-30T04:00:00Z"
-    doc["hardening"]["completed_at"] = "2026-08-30T03:00:00Z"
-    doc["hardening"]["severity_reassessment"] = doc["hardening"].pop("escalated_severity")
-    doc["proof"]["config_dependency"] = {
-        "kind": "none",
-        "evidence": "not applicable: the proof uses the shipped path without a configuration precondition",
-        "precondition_grants_effect": False,
-    }
-    doc["proof"]["supporting_evidence_types"] = []
-    doc["caveats"] = []
-    doc.pop("hypothesis_queue")
-    return doc
-
-
-def baseline_nrf():
-    """A schema-5 NO_REPORTABLE_FINDING candidate with a full exhaustion record: golden ACCEPT.
-
-    A clean verdict is coherent only if its own adversarial review did not CONFIRM a finding
-    (the finding did not hold), and if it ran a probe that would have fired had the bug existed.
-    """
-    doc = baseline_v5()
-    doc["threat_model"]["capability_before"] = "cannot read other tenants"
-    doc["threat_model"]["capability_after"] = "cannot read other tenants"
-    doc["threat_model"]["strongest_refutation"] = {
-        "claim": "the handler scopes the query to the caller's tenant",
-        "kind": "non_terminal",
-        "evidence": "ReportController#show applies .where(org_id: current_user.org_id)",
-        "resolution": "",
-        "resolution_source": "none",
-        "result": "confirmed",
-    }
-    # The review audits the clean conclusion; it did not confirm a vulnerability.
-    doc["adversarial_review"]["cold_verify"] = {
-        "verdict": "DISPROVED",
-        "rederived_severity": "n/a: tenant scope holds",
-        "killed_subclaim": "cross-tenant read: the query is org-scoped, so the row is never returned",
-        "subclaims": [
-            {"claim": "attacker controls the report id", "status": "supported",
-             "evidence": "routes.rb:14 GET /reports/:id -> params[:id]"},
-            {"claim": "id reaches the query with no tenant filter", "status": "unsupported",
-             "evidence": "report_controller.rb:12 Report.where(org_id: current_user.org_id).find(params[:id])"},
-        ],
-    }
-    # The proof block reflects the negative probe, not an inherited "boundary crossed".
-    doc["proof"] = {
-        "type": "regression-test",
-        "artifact": "probe.sh",
-        "command": "./probe.sh tenant-A-token /api/reports/<tenant-B-id>",
-        "observed_result": "404 not found under the tenant filter",
-        "negative_controls": ["same-tenant id returns 200"],
-        "production_relevance": "the shipped controller path",
-        "config_dependency": "none",
-    }
-    doc["exhaustion"] = {
-        "tried": [
-            "traced GET /reports/:id end to end",
-            "checked the destroy sibling sharing the scope",
-            "grepped the flow shape repo-wide",
-        ],
-        "untried_closed": [],
-        "probes": [
-            {
-                "hypothesis": "cross-tenant id bypass on the report show path",
-                "command": "./probe.sh tenant-A-token /api/reports/<tenant-B-id>",
-                "would_fire_if_vulnerable": "returns the tenant-B report row",
-                "observed": "404 under the tenant filter",
-                "result": "negative",
-            }
-        ],
-        "depth_contract": {
-            "entrypoint": "GET /api/reports/:id",
-            "invariant_enforcement": "ReportController#show tenant scope",
-            "trace": "params[:id] -> Report.where(org_id:).find -> render",
-            "sibling_checked": "destroy action shares the same scope",
-            "defeated_counterexample": "cross-tenant id returns 404 under the tenant filter",
-        },
-    }
-    doc["decision"] = {
-        "verdict": "NO_REPORTABLE_FINDING",
-        "gate": "refutation",
-        "failed_gates": [],
-        "missing_evidence": [],
-        "reason": "tenant scope holds on the traced path and its sibling",
-        "decided_at": "2026-08-18",
-    }
-    return doc
-
-
-def case_2_accept():
-    # the golden report accept is now schema 5 (schema 4 cannot reach report stage)
-    return baseline_v5(), "report", 0
-
-
-def case_5_accept():
-    # same as baseline_v5: commits + issues + PRs evidenced, distinct
-    return baseline_v5(), "report", 0
-
-
-def case_1_reject():
-    # refuted but resolution empty -> reject
-    doc = baseline_v5()
-    doc["threat_model"]["strongest_refutation"]["resolution"] = ""
-    return doc, "report", 2
-
-
-def case_1b_reject():
-    # refuted but resolution has no independent evidence artifact
-    doc = baseline_v5()
-    doc["threat_model"]["strongest_refutation"]["evidence"] = ""
-    return doc, "report", 2
-
-
-def case_3_reject():
-    # terminal kind owned_boundary_absent, "resolved" by third-party misuse
-    doc = baseline_v5()
-    doc["threat_model"]["strongest_refutation"] = {
-        "claim": "the SDK model field is not an authorization policy",
-        "kind": "owned_boundary_absent",
-        "evidence": "SDK exposes model as caller-controlled config and documents caller as responsible",
-        "resolution": "a third-party proxy forwards untrusted model, so it is exploitable",
-        "resolution_source": "third_party",
-        "result": "refuted",
-    }
-    return doc, "report", 2
-
-
-def case_4_reject():
-    # distinct claimed but upstream_history has no issue/PR channels (git log only)
-    doc = baseline_v5()
-    for check in doc["novelty"]["checks"]:
-        if check["source"] == "upstream_history":
-            check.pop("channels", None)
-            check["evidence"] = evidence("git_log", "/tmp/git-log.txt")
-    return doc, "report", 2
-
-
-def case_5b_accept():
-    # explicit: commits+issues+PRs each evidenced -> accept
-    doc = baseline_v5()
-    for check in doc["novelty"]["checks"]:
-        if check["source"] == "upstream_history":
-            check["channels"] = upstream_channels(("no_match", "no_match", "no_match"))
-    return doc, "report", 0
-
-
-def case_6_reject():
-    # a checked PR channel exposes a match whose fingerprint == root cause, yet distinct
-    doc = baseline_v5()
-    fp = doc["novelty"]["root_cause_fingerprint"]
-    for check in doc["novelty"]["checks"]:
-        if check["source"] == "upstream_history":
-            channels = upstream_channels(("no_match", "no_match", "checked"))
-            channels[2]["closest_match"] = {
-                "id": "PR#153",
-                "fingerprint": fp,
-                "comparison": "same fix already open",
-            }
-            check["channels"] = channels
-    return doc, "report", 2
-
-
-def case_7_reject():
-    # upstream issue establishes by-design; candidate still claims REPORTABLE
-    doc = baseline_v5()
-    for check in doc["novelty"]["checks"]:
-        if check["source"] == "upstream_history":
-            channels = upstream_channels(("no_match", "checked", "no_match"))
-            channels[1]["closest_match"] = {
-                "id": "issue#358",
-                "fingerprint": "boundary|primitive|invariant|by-design",
-                "comparison": "maintainer says current behavior is intended",
-                "establishes_by_design": True,
-            }
-            check["channels"] = channels
-    return doc, "report", 2
-
-
-def case_7b_accept():
-    # correct handling of the by-design issue: KILL @ refutation, decision stage
-    doc = baseline()
-    doc["threat_model"]["strongest_refutation"] = {
-        "claim": "behavior is the documented contract",
-        "kind": "behavior_is_documented_contract",
-        "evidence": "upstream issue #358: maintainer states current behavior is intended",
-        "resolution": "",
-        "resolution_source": "none",
-        "result": "confirmed",
-    }
-    doc["decision"] = {
-        "verdict": "KILL",
-        "gate": "refutation",
-        "failed_gates": ["refutation"],
-        "missing_evidence": [],
-        "reason": "upstream issue establishes documented-contract behavior",
-        "decided_at": "2026-08-08",
-    }
-    return doc, "decision", 0
-
-
-def legacy_backward_compat_accept():
-    # schema 3, legacy string refutation, HOLD @ route (non-distinct path) still validates
-    doc = baseline()
-    doc["schema_version"] = 3
-    doc["threat_model"]["strongest_refutation"] = "attacker may already control the peer"
-    doc["threat_model"]["refutation_result"] = "unresolved"
-    doc["route"]["scope_verified"] = False
-    doc["route"]["type"] = "none"
-    doc["route"]["owner_verified"] = False
-    for check in doc["novelty"]["checks"]:
-        check.pop("evidence", None)
-        check.pop("channels", None)
-    doc["novelty"]["classification"] = "uncertain"
-    doc["decision"] = {
-        "verdict": "HOLD",
-        "gate": "route",
-        "failed_gates": [],
-        "missing_evidence": ["confirm program scope covers this repo"],
-        "reason": "scope unverified",
-        "decided_at": "2026-08-08",
-    }
-    return doc, "decision", 0
-
-
-# (label, builder, required stderr substring for the REJECT reason)
-def case_A_reject():
-    # stale checkout vulnerable, but current main is fixed -> distinct rejected
-    doc = baseline_v5()
-    doc["novelty"]["current_upstream_state"]["result"] = "fixed"
-    return doc, "report", 2
-
-
-def case_B_accept():
-    # current main still vulnerable with a fetch artifact -> distinct accepted
-    return baseline_v5(), "report", 0
-
-
-def case_C_reject():
-    # GitHub PR channel unavailable with only a prose reason (no attempt artifact)
-    doc = baseline_v5()
-    for check in doc["novelty"]["checks"]:
-        if check["source"] == "upstream_history":
-            channels = upstream_channels(("no_match", "no_match", "unavailable"))
-            channels[2].pop("evidence", None)
-            channels[2]["reason"] = "PR search unavailable"
-            check["channels"] = channels
-    return doc, "report", 2
-
-
-def case_D_reject():
-    # GitHub PR search attempted, tool failed, artifact present, but still claims distinct
-    doc = baseline_v5()
-    for check in doc["novelty"]["checks"]:
-        if check["source"] == "upstream_history":
-            channels = upstream_channels(("no_match", "no_match", "unavailable"))
-            channels[2]["reason"] = "GitHub API returned 403"
-            channels[2]["evidence"] = evidence("gh_pr_search", "/tmp/gh-pr-403.txt")
-            check["channels"] = channels
-    return doc, "report", 2
-
-
-def case_E_accept():
-    # non-GitHub upstream with no PR concept -> unavailable channels accepted
-    doc = baseline_v5()
-    doc["target"]["repository"] = "git.launchpad.net/o/r"
-    doc["route"]["owning_project"] = "o/r"
-    for check in doc["novelty"]["checks"]:
-        if check["source"] == "upstream_history":
-            channels = upstream_channels(("no_match", "unavailable", "unavailable"))
-            channels[1]["reason"] = "no issue tracker on this forge"
-            channels[1].pop("evidence", None)
-            channels[2]["reason"] = "no pull-request concept on this forge"
-            channels[2].pop("evidence", None)
-            check["channels"] = channels
-    return doc, "report", 0
-
-
-def case_F_reject():
-    # confirmed terminal kind but KILL at the wrong gate
-    doc = baseline()
-    doc["threat_model"]["strongest_refutation"] = {
-        "claim": "the caller already holds this capability",
-        "kind": "capability_already_possessed",
-        "evidence": "the attacker principal already has the grant",
-        "resolution": "",
-        "resolution_source": "none",
-        "result": "confirmed",
-    }
-    doc["decision"] = {
-        "verdict": "KILL",
-        "gate": "refutation",
-        "failed_gates": ["refutation"],
-        "missing_evidence": [],
-        "reason": "kind is capability_already_possessed",
-        "decided_at": "2026-08-08",
-    }
-    return doc, "decision", 2
-
-
-def case_G_accept():
-    # confirmed terminal kind, KILL at its mapped gate
-    doc = baseline()
-    doc["threat_model"]["capability_before"] = "can already do X"
-    doc["threat_model"]["capability_after"] = "can already do X"
-    doc["threat_model"]["strongest_refutation"] = {
-        "claim": "the caller already holds this capability",
-        "kind": "capability_already_possessed",
-        "evidence": "the attacker principal already has the grant",
-        "resolution": "",
-        "resolution_source": "none",
-        "result": "confirmed",
-    }
-    doc["decision"] = {
-        "verdict": "KILL",
-        "gate": "capability_delta",
-        "failed_gates": ["capability_delta"],
-        "missing_evidence": [],
-        "reason": "capability unchanged; caller already possessed it",
-        "decided_at": "2026-08-08",
-    }
-    return doc, "decision", 0
-
-
-TDNO = {
-    "claim": "the target does not own this security property",
-    "kind": "target_does_not_own_security_property",
-    "evidence": "the defective boundary is defined and enforced by a different project",
-    "resolution": "",
-    "resolution_source": "none",
-    "result": "confirmed",
-}
-
-
-def case_H_accept():
-    # target_does_not_own + confirmed -> KILL @ ownership (nobody eligible owns it here)
-    doc = baseline()
-    doc["threat_model"]["strongest_refutation"] = dict(TDNO)
-    doc["decision"] = {
-        "verdict": "KILL",
-        "gate": "ownership",
-        "failed_gates": ["ownership"],
-        "missing_evidence": [],
-        "reason": "no bounty-eligible owner for this boundary in the target",
-        "decided_at": "2026-08-08",
-    }
-    return doc, "decision", 0
-
-
-def case_I_accept():
-    # target_does_not_own + confirmed -> ROUTE_ELSEWHERE @ route (another project owns it)
-    doc = baseline()
-    doc["threat_model"]["strongest_refutation"] = dict(TDNO)
-    doc["route"]["owning_project"] = "other-org/other-repo"
-    doc["route"]["owner_evidence"] = "the defective boundary is implemented in other-org/other-repo"
-    doc["route"]["submission_target"] = "upstream advisory to other-org/other-repo"
-    doc["route"]["type"] = "upstream-advisory"
-    doc["route"]["owner_verified"] = True
-    doc["decision"] = {
-        "verdict": "ROUTE_ELSEWHERE",
-        "gate": "route",
-        "failed_gates": [],
-        "missing_evidence": [],
-        "reason": "another project owns the defective boundary",
-        "decided_at": "2026-08-08",
-    }
-    return doc, "decision", 0
-
-
-def case_J_reject():
-    # target_does_not_own + confirmed but KILL at the wrong gate
-    doc = baseline()
-    doc["threat_model"]["capability_before"] = "same capability"
-    doc["threat_model"]["capability_after"] = "same capability"
-    doc["threat_model"]["strongest_refutation"] = dict(TDNO)
-    doc["decision"] = {
-        "verdict": "KILL",
-        "gate": "capability_delta",
-        "failed_gates": ["capability_delta"],
-        "missing_evidence": [],
-        "reason": "killed at the wrong gate on purpose",
-        "decided_at": "2026-08-08",
-    }
-    return doc, "decision", 2
-
-
-def case_K_accept():
-    # schema-5 with intent corpus clean + cold verify CONFIRMED + no FP hits -> accept
-    return baseline_v5(), "report", 0
-
-
-def case_L_reject():
-    # finding matches a documented intentional behavior -> forbid REPORTABLE
-    doc = baseline_v5()
-    doc["intent_corpus"]["finding_match"] = "intentional"
-    return doc, "report", 2
-
-
-def case_M_reject():
-    # cold verifier did not CONFIRM -> forbid REPORTABLE
-    doc = baseline_v5()
-    doc["adversarial_review"]["cold_verify"]["verdict"] = "DISPROVED"
-    return doc, "report", 2
-
-
-def case_N_reject():
-    # an FP-pattern hit with no rebuttal -> forbid REPORTABLE
-    doc = baseline_v5()
-    doc["adversarial_review"]["advocate"]["fp_pattern_hits"] = [
-        {"pattern": "same-origin confusion", "rebuttal": ""}
-    ]
-    return doc, "report", 2
-
-
-def case_O_accept():
-    # same FP-pattern hit, now rebutted with a grounded evidence locator -> accept
-    doc = baseline_v5()
-    doc["adversarial_review"]["advocate"]["fp_pattern_hits"] = [
-        {
-            "pattern": "same-origin confusion",
-            "rebuttal": "cross-tenant: attacker A reads tenant B",
-            "evidence": "ReportController#show loads Report.find(id) with no org filter (app/controllers/report_controller.rb:12)",
-        }
-    ]
-    return doc, "report", 0
-
-
-def case_P_reject():
-    # schema-5 REPORTABLE missing the adversarial_review block entirely -> reject
-    doc = baseline_v5()
-    del doc["adversarial_review"]
-    return doc, "report", 2
-
-
-def case_Q_reject():
-    # a fully valid schema-4 REPORTABLE cannot reach report stage; migrate to schema 5
-    return baseline(), "report", 2
-
-
-def case_R_reject():
-    # cold_verify CONFIRMED but the Advocate's own defense blocks the finding -> reject
-    doc = baseline_v5()
-    doc["adversarial_review"]["advocate"]["blocks"] = True
-    return doc, "report", 2
-
-
-def case_S_reject():
-    # cold_verify CONFIRMED contradicts a non-null killed_subclaim -> reject
-    doc = baseline_v5()
-    doc["adversarial_review"]["cold_verify"]["killed_subclaim"] = "sub-claim B never proven"
-    return doc, "report", 2
-
-
-def case_T_reject():
-    # cold_verify CONFIRMED with an empty rederived_severity -> reject
-    doc = baseline_v5()
-    doc["adversarial_review"]["cold_verify"]["rederived_severity"] = ""
-    return doc, "report", 2
-
-
-def case_U_reject():
-    # Advocate recorded no protection layers searched -> the pass did not run -> reject
-    doc = baseline_v5()
-    doc["adversarial_review"]["advocate"]["layers_checked"] = []
-    return doc, "report", 2
-
-
-def case_V_reject():
-    # intent corpus with no sources listed -> an empty corpus pass -> reject
-    doc = baseline_v5()
-    doc["intent_corpus"]["sources"] = []
-    return doc, "report", 2
-
-
-def case_W_reject():
-    # FP-pattern hit rebutted in prose but with no evidence locator -> reject
-    doc = baseline_v5()
-    doc["adversarial_review"]["advocate"]["fp_pattern_hits"] = [
-        {"pattern": "framework-protection blindness", "rebuttal": "the ORM does not parameterize this call"}
-    ]
-    return doc, "report", 2
-
-
-def case_XA_accept():
-    # schema-5 NO_REPORTABLE_FINDING with a full exhaustion record -> accept
-    return baseline_nrf(), "decision", 0
-
-
-def case_XB_reject():
-    # NO_REPORTABLE_FINDING with the exhaustion block removed -> reject
-    doc = baseline_nrf()
-    del doc["exhaustion"]
-    return doc, "decision", 2
-
-
-def case_XC_reject():
-    # NO_REPORTABLE_FINDING with an incomplete depth_contract -> reject
-    doc = baseline_nrf()
-    doc["exhaustion"]["depth_contract"]["trace"] = ""
-    return doc, "decision", 2
-
-
-def case_XD_reject():
-    # NO_REPORTABLE_FINDING with an empty tried[] -> reject
-    doc = baseline_nrf()
-    doc["exhaustion"]["tried"] = []
-    return doc, "decision", 2
-
-
-def case_XE_reject():
-    # CONFIRMED cold_verify with no sub-claim decomposition -> reject
-    doc = baseline_v5()
-    doc["adversarial_review"]["cold_verify"]["subclaims"] = []
-    return doc, "report", 2
-
-
-def case_XF_reject():
-    # CONFIRMED cold_verify but one sub-claim is unsupported -> reject
-    doc = baseline_v5()
-    doc["adversarial_review"]["cold_verify"]["subclaims"] = [
-        {"claim": "attacker controls X", "status": "supported"},
-        {"claim": "X reaches the sink unsanitized", "status": "unsupported"},
-    ]
-    return doc, "report", 2
-
-
-def case_YD_reject():
-    # NO_REPORTABLE_FINDING with the intent corpus removed -> reject (owed by step 1)
-    doc = baseline_nrf()
-    del doc["intent_corpus"]
-    return doc, "decision", 2
-
-
-def case_YE_reject():
-    # REPORTABLE, every public novelty check clean, yet claims low private-dup risk -> reject
-    doc = baseline_v5()
-    doc["novelty"]["private_duplicate_risk"] = "low"
-    return doc, "report", 2
-
-
-def case_ZA_reject():
-    # REPORTABLE with no target.saturation assessment -> reject
-    doc = baseline_v5()
-    del doc["target"]["saturation"]
-    return doc, "report", 2
-
-
-def case_ZB_reject():
-    # non-disclosing program claiming LOW private-dup risk -> reject (must be >= medium)
-    doc = baseline_v5()
-    doc["target"]["saturation"]["discloses_reports"] = False
-    doc["novelty"]["private_duplicate_risk"] = "low"
-    return doc, "report", 2
-
-
-def case_ZC_accept():
-    # non-disclosing program, high risk, but an articulated collision differentiator -> accept
-    doc = baseline_v5()
-    doc["target"]["saturation"]["discloses_reports"] = False
-    doc["novelty"]["private_duplicate_risk"] = "high"
-    doc["novelty"]["collision_differentiator"] = "cross-layer raw-hex vs canonical desync; no public advisory; in-repo v4 stores canonical"
-    return doc, "report", 0
-
-
-def case_ZG_accept():
-    # non-disclosing program, medium risk, with a differentiator -> accept (>= medium ok)
-    doc = baseline_v5()
-    doc["target"]["saturation"]["discloses_reports"] = False
-    doc["novelty"]["private_duplicate_risk"] = "medium"
-    doc["novelty"]["collision_differentiator"] = "bespoke vein a diff-reader never reaches"
-    return doc, "report", 0
-
-
-def case_ZH_reject():
-    # high private-dup risk but no collision differentiator -> reject (label alone is not enough)
-    doc = baseline_v5()
-    doc["novelty"]["private_duplicate_risk"] = "high"
-    return doc, "report", 2
-
-
-def case_ZI_accept():
-    # high private-dup risk WITH an articulated collision differentiator -> accept
-    doc = baseline_v5()
-    doc["novelty"]["private_duplicate_risk"] = "high"
-    doc["novelty"]["collision_differentiator"] = "cross-layer normalization desync; no public advisory"
-    return doc, "report", 0
-
-
-def case_ZJ_reject():
-    # finding manifests only in a default/dev config a real deployment overrides -> reject
-    doc = baseline_v5()
-    doc["proof"]["config_dependency"] = "default_only"
-    return doc, "report", 2
-
-
-def case_ZK_reject():
-    # a CONFIRMED subclaim with no evidence locator -> reject
-    doc = baseline_v5()
-    doc["adversarial_review"]["cold_verify"]["subclaims"] = [
-        {"claim": "attacker controls X", "status": "supported", "evidence": "x.rb:1"},
-        {"claim": "X reaches the sink", "status": "supported"},
-    ]
-    return doc, "report", 2
-
-
-def case_ZL_reject():
-    # schema-5 model stage without a dedup-visibility assessment -> reject
-    doc = baseline_v5()
-    doc["target"]["saturation"]["discloses_reports"] = None
-    return doc, "model", 2
-
-
-def case_ZM_accept():
-    # schema-5 model stage with the dedup-visibility assessment present -> accept
-    return baseline_v5(), "model", 0
-
-
-def case_AA_reject():
-    # REPORTABLE self-certified (reviewer self) -> reject (no self-certification)
-    doc = baseline_v5()
-    doc["adversarial_review"]["reviewer"] = "self"
-    return doc, "report", 2
-
-
-def case_AB_accept():
-    # REPORTABLE with an owed independent review -> accept (provisional, warns)
-    doc = baseline_v5()
-    doc["adversarial_review"]["reviewer"] = "owed"
-    return doc, "report", 0
-
-
-def case_AC_reject():
-    # REPORTABLE with no completed hardening pass -> reject
-    doc = baseline_v5()
-    doc["hardening"]["status"] = "none"
-    return doc, "report", 2
-
-
-def case_AD_reject():
-    # NO_REPORTABLE_FINDING self-certified -> reject (a clean verdict can't be self-graded)
-    doc = baseline_nrf()
-    doc["adversarial_review"]["reviewer"] = "self"
-    return doc, "decision", 2
-
-
-def case_AE_accept():
-    # NO_REPORTABLE_FINDING with an owed independent review -> accept (provisional)
-    doc = baseline_nrf()
-    doc["adversarial_review"]["reviewer"] = "owed"
-    return doc, "decision", 0
-
-
-def case_AF_reject():
-    # NO_REPORTABLE_FINDING carrying a CONFIRMED cold_verify (stale report-era review) -> reject:
-    # a confirmed finding contradicts a clean verdict.
-    doc = baseline_nrf()
-    doc["adversarial_review"]["cold_verify"]["verdict"] = "CONFIRMED"
-    return doc, "decision", 2
-
-
-# --- Target ledger (--stage target): pre-candidate entry/exit governance (v0.6.0) ---
-
-def target_baseline():
-    """A valid SELECTED target ledger: the golden target-stage ACCEPT."""
-    return {
-        "program": "example",
-        "asset": "Example Server",
-        "repository": "github.com/example/server",
-        "commit": "8f9e6bb",
-        "operating_mode": "SOURCE_ONLY",
-        "scope": {
-            "asset_identifier": "Example Server",
-            "eligible_for_bounty": True,
-            "max_severity": "critical",
-            "checked_at": "2026-08-19",
-            "source": "GetProgramScopeDetail",
-        },
-        "poc_policy": {
-            "quote": "Our code is open so use that to your advantage!",
-            "accepts_source_poc": True,
-            "checked_at": "2026-08-19",
-        },
-        "saturation": {
-            "asset_resolved_count": 6,
-            "discloses_reports": True,
-            "checked_at": "2026-08-19",
-            "rationale": "asset-level 6 resolved all-time vs program-wide 2382/90d; least-saturated eligible asset",
-        },
-        "disposition": "SELECTED",
-        "rotation_reason": "",
-    }
-
-
-def case_TA_accept():
-    # complete SELECTED ledger -> accept
-    return target_baseline(), "target", 0
-
-
-def case_TB_reject():
-    # no verbatim policy quote -> reject (cannot decide source-viability on a paraphrase)
-    doc = target_baseline()
-    doc["poc_policy"]["quote"] = ""
-    return doc, "target", 2
-
-
-def case_TC_reject():
-    # eligibility asserted from memory, not a live bool -> reject
-    doc = target_baseline()
-    doc["scope"]["eligible_for_bounty"] = None
-    return doc, "target", 2
-
-
-def case_TD_reject():
-    # ROTATED with no rotation_reason -> reject (rotation is a terminal verdict owed evidence)
-    doc = target_baseline()
-    doc["disposition"] = "ROTATED"
-    doc["rotation_reason"] = ""
-    return doc, "target", 2
-
-
-def case_TE_accept():
-    # ROTATED with a live-evidenced reason + a quoted auto-N/A policy line -> accept.
-    doc = target_baseline()
-    doc["poc_policy"]["quote"] = "Reports based solely on source code analysis without a running-instance PoC are not accepted."
-    doc["poc_policy"]["accepts_source_poc"] = False
-    doc["disposition"] = "ROTATED"
-    doc["rotation_reason"] = "policy quote establishes source-only is auto-N/A; no local-instance PoC path in budget"
-    return doc, "target", 0
-
-
-def case_TF_reject():
-    # no asset-level saturation rationale -> reject (selection is where dupes are decided)
-    doc = target_baseline()
-    doc["saturation"]["discloses_reports"] = None
-    return doc, "target", 2
-
-
-def case_TG_reject():
-    # bad disposition -> reject
-    doc = target_baseline()
-    doc["disposition"] = "MAYBE"
-    return doc, "target", 2
-
-
-def case_AA6_accept():
-    return baseline_v6(), "report", 0
-
-
-def case_AB6_accept():
-    doc = baseline_v6()
-    doc["claim_scope"]["highest_proven_rung"] = "exact_executable"
-    doc["claim_scope"]["demonstrated_capability"] = "terminate the pinned parser with a crafted owned fixture"
-    doc["claim_scope"]["demonstrated_impact"] = "exact parser process exits on the owned fixture"
-    doc["claim_scope"]["unsupported_extensions"] = [
-        "supported product ingress to the parser was not demonstrated",
-        "automatic restart and repeated service outage were not demonstrated"
-    ]
-    doc["claim_scope"]["severity_ceiling"] = "medium"
-    doc["recovery"] = {
-        "classification": "NARROW",
-        "failed_rung": "owned_boundary",
-        "next_action": "report only the exact executable effect",
-        "required_artifact": "",
-        "surviving_claim": "the exact executable effect is reproduced with a negative control",
-    }
-    doc["caveats"] = [
-        {
-            "quote": "supported product ingress was not demonstrated",
-            "classification": "ordinary",
-            "justification": "the report is limited to the in-scope pinned parser executable",
-        },
-        {
-            "quote": "automatic restart was not demonstrated",
-            "classification": "ordinary",
-            "justification": "the report claims one process termination, not a crash loop",
-        },
-    ]
-    return doc, "report", 0
-
-
-def case_AC6_reject():
-    doc = baseline_v6()
-    doc["recovery"] = {
-        "classification": "RECOVER",
-        "failed_rung": "owned_boundary",
-        "next_action": "trace the supported product ingress",
-        "required_artifact": "artifacts/ingress-trace.txt",
-        "surviving_claim": "the exact executable effect remains demonstrated",
-    }
-    return doc, "report", 2
-
-
-def case_AD6_accept():
-    doc = baseline_v6()
-    doc["proof"]["config_dependency"] = {
-        "kind": "program_shipped_default",
-        "evidence": "config/defaults.yml:12 and release artifact SHA-256 abc",
-        "precondition_grants_effect": False,
-    }
-    return doc, "report", 0
-
-
-def case_AE6_reject():
-    doc = baseline_v6()
+def test_operator_weakened_config_blocks_reporting() -> None:
+    doc = valid_candidate()
     doc["proof"]["config_dependency"] = {
         "kind": "operator_weakened",
-        "evidence": "operator disabled the authorization middleware",
+        "evidence": "operator disabled tenant middleware",
         "precondition_grants_effect": True,
     }
-    return doc, "report", 2
+    assert_reject(doc, "operator_weakened")
 
 
-def case_AF6_reject():
-    doc = baseline_v6()
-    doc["decision"]["decided_at"] = "after lunch"
-    return doc, "report", 2
+def test_narrow_preserves_smaller_valid_claim() -> None:
+    doc = valid_candidate()
+    doc["recovery"] = {
+        "status": "narrow",
+        "next_action": "submit only the demonstrated cross-tenant read",
+        "required_artifact": "",
+        "unsupported_claims": ["write access was not demonstrated"],
+    }
+    assert not errors_for(doc)
 
 
-CASES = [
-    ("AA6 schema-6 bounded candidate -> ACCEPT", case_AA6_accept, None),
-    ("AB6 NARROW preserves exact executable claim -> ACCEPT", case_AB6_accept, None),
-    ("AC6 unresolved RECOVER cannot report -> REJECT", case_AC6_reject, "forbids REPORTABLE"),
-    ("AD6 shipped default with evidence -> ACCEPT", case_AD6_accept, None),
-    ("AE6 operator-weakened precondition -> REJECT", case_AE6_reject, "operator_weakened"),
-    ("AF6 free-text decision timestamp -> REJECT", case_AF6_reject, "decision.decided_at"),
-    ("2  resolution attacks same boundary -> ACCEPT", case_2_accept, None),
-    ("K  schema-5 process gates satisfied -> ACCEPT", case_K_accept, None),
-    ("O  FP-pattern hit rebutted -> ACCEPT", case_O_accept, None),
-    ("L  intent match intentional -> REJECT", case_L_reject, "intentional forbids REPORTABLE"),
-    ("M  cold verify not CONFIRMED -> REJECT", case_M_reject, "cold_verify.verdict CONFIRMED"),
-    ("N  unrebutted FP-pattern hit -> REJECT", case_N_reject, "unrebutted"),
-    ("P  schema-5 missing adversarial_review -> REJECT", case_P_reject, "requires an adversarial_review block"),
-    ("Q  schema-4 at report stage -> REJECT", case_Q_reject, "schema_version >= 5"),
-    ("R  advocate blocks the finding, yet REPORTABLE -> REJECT", case_R_reject, "advocate.blocks is true"),
-    ("S  cold_verify CONFIRMED + killed_subclaim -> REJECT", case_S_reject, "killed_subclaim"),
-    ("T  cold_verify CONFIRMED, empty severity -> REJECT", case_T_reject, "rederived_severity"),
-    ("U  advocate searched no layers -> REJECT", case_U_reject, "layers_checked"),
-    ("V  intent corpus with no sources -> REJECT", case_V_reject, "intent_corpus.sources"),
-    ("W  FP rebuttal with no evidence locator -> REJECT", case_W_reject, "needs evidence"),
-    ("XA NO_REPORTABLE_FINDING + exhaustion record -> ACCEPT", case_XA_accept, None),
-    ("XB NO_REPORTABLE_FINDING, no exhaustion block -> REJECT", case_XB_reject, "requires an exhaustion block"),
-    ("XC NO_REPORTABLE_FINDING, incomplete depth_contract -> REJECT", case_XC_reject, "depth_contract.trace"),
-    ("XD NO_REPORTABLE_FINDING, empty tried[] -> REJECT", case_XD_reject, "exhaustion.tried"),
-    ("XE CONFIRMED cold_verify, no subclaims -> REJECT", case_XE_reject, "cold_verify.subclaims"),
-    ("XF CONFIRMED cold_verify, unsupported subclaim -> REJECT", case_XF_reject, "not supported"),
-    ("YD NO_REPORTABLE_FINDING, no intent corpus -> REJECT", case_YD_reject, "intent_corpus"),
-    ("YE REPORTABLE all-clean novelty, low private risk -> REJECT", case_YE_reject, "cannot claim low"),
-    ("ZA REPORTABLE, no saturation assessment -> REJECT", case_ZA_reject, "target.saturation"),
-    ("ZB non-disclosing program, low risk -> REJECT", case_ZB_reject, "cannot be claimed"),
-    ("ZC non-disclosing program, high risk -> ACCEPT", case_ZC_accept, None),
-    ("ZG non-disclosing program, medium risk -> ACCEPT", case_ZG_accept, None),
-    ("ZH high dup-risk, no collision differentiator -> REJECT", case_ZH_reject, "collision_differentiator"),
-    ("ZI high dup-risk + differentiator -> ACCEPT", case_ZI_accept, None),
-    ("ZJ config_dependency default_only -> REJECT", case_ZJ_reject, "config_dependency"),
-    ("ZK CONFIRMED subclaim with no evidence -> REJECT", case_ZK_reject, "evidence must cite"),
-    ("ZL model stage, no dedup-visibility assessment -> REJECT", case_ZL_reject, "discloses_reports"),
-    ("ZM model stage with saturation present -> ACCEPT", case_ZM_accept, None),
-    ("AA REPORTABLE self-certified -> REJECT", case_AA_reject, "may not be self-certified"),
-    ("AB REPORTABLE independent review owed -> ACCEPT (provisional)", case_AB_accept, None),
-    ("AC REPORTABLE, no hardening pass -> REJECT", case_AC_reject, "hardening pass"),
-    ("AD NO_REPORTABLE_FINDING self-certified -> REJECT", case_AD_reject, "may not be self-certified"),
-    ("AE NO_REPORTABLE_FINDING review owed -> ACCEPT (provisional)", case_AE_accept, None),
-    ("AF NO_REPORTABLE_FINDING + CONFIRMED cold_verify -> REJECT", case_AF_reject, "contradicts adversarial_review"),
-    ("TA target ledger SELECTED complete -> ACCEPT", case_TA_accept, None),
-    ("TB target no verbatim policy quote -> REJECT", case_TB_reject, "poc_policy.quote"),
-    ("TC target eligibility not a live bool -> REJECT", case_TC_reject, "eligible_for_bounty"),
-    ("TD target ROTATED, no reason -> REJECT", case_TD_reject, "rotation_reason"),
-    ("TE target ROTATED w/ quoted-policy evidence -> ACCEPT", case_TE_accept, None),
-    ("TF target no saturation dedup assessment -> REJECT", case_TF_reject, "discloses_reports"),
-    ("TG target bad disposition -> REJECT", case_TG_reject, "disposition must be"),
-    ("5  commits+issues+PRs evidenced -> ACCEPT", case_5_accept, None),
-    ("5b upstream channels explicit -> ACCEPT", case_5b_accept, None),
-    ("7b by-design -> KILL@refutation -> ACCEPT", case_7b_accept, None),
-    ("legacy schema-3 HOLD@route -> ACCEPT", legacy_backward_compat_accept, None),
-    ("1  refuted, empty resolution -> REJECT", case_1_reject, "resolution"),
-    ("1b refuted, no evidence artifact -> REJECT", case_1b_reject, "evidence"),
-    ("3  terminal kind resolved by third-party -> REJECT", case_3_reject, "terminal refutation"),
-    ("4  distinct via git log only, no issue/PR -> REJECT", case_4_reject, "channels covering"),
-    ("6  checked match == root fingerprint yet distinct -> REJECT", case_6_reject, "identical to root_cause_fingerprint"),
-    ("7  by-design issue but still REPORTABLE -> REJECT", case_7_reject, "establishes_by_design"),
-    ("B  current main vulnerable + fetch artifact -> ACCEPT", case_B_accept, None),
-    ("E  non-github upstream, unavailable PR/issues -> ACCEPT", case_E_accept, None),
-    ("G  terminal kind + KILL at mapped gate -> ACCEPT", case_G_accept, None),
-    ("A  stale checkout, current main fixed -> REJECT", case_A_reject, "fixed forbids distinct"),
-    ("C  github PR unavailable, prose only -> REJECT", case_C_reject, "attempted-search artifact"),
-    ("D  github PR unavailable w/ artifact, distinct -> REJECT", case_D_reject, "channels covering"),
-    ("F  terminal kind + KILL at wrong gate -> REJECT", case_F_reject, "requires decision.gate"),
-    ("H  target_does_not_own + KILL@ownership -> ACCEPT", case_H_accept, None),
-    ("I  target_does_not_own + ROUTE_ELSEWHERE@route -> ACCEPT", case_I_accept, None),
-    ("J  target_does_not_own + KILL@capability_delta -> REJECT", case_J_reject, "requires decision.gate"),
-]
+def test_recover_and_operator_required_block_reporting() -> None:
+    for status in ("recover", "operator_required"):
+        doc = valid_candidate()
+        doc["recovery"] = {
+            "status": status,
+            "next_action": "obtain hosted proof",
+            "required_artifact": "owned test account",
+            "unsupported_claims": [],
+        }
+        assert_reject(doc, f"recovery.status {status} forbids REPORTABLE")
 
 
-def main():
-    failures = 0
-    for label, builder, substr in CASES:
-        doc, stage, expected = builder()
-        code, stderr = run(doc, stage)
-        ok = code == expected
-        # For REJECT cases, require the rejection to cite the intended rule,
-        # not an incidental schema error.
-        if ok and expected == 2 and substr and substr not in stderr:
-            ok = False
-        status = "PASS" if ok else "FAIL"
-        if not ok:
-            failures += 1
-        print(f"[{status}] {label}  (stage={stage} expected={expected} got={code})")
-        if not ok and stderr.strip():
-            for line in stderr.strip().splitlines()[:3]:
-                print(f"         stderr: {line}")
-    print(f"\n{len(CASES) - failures}/{len(CASES)} cases behaved as specified")
-    return 1 if failures else 0
+def test_novelty_requires_issue_and_pr_channels() -> None:
+    doc = valid_candidate()
+    doc["novelty"]["searches"] = [
+        item for item in doc["novelty"]["searches"]
+        if item["source"] != "upstream_pull_requests"
+    ]
+    assert_reject(doc, "upstream_pull_requests")
+
+
+def test_private_collision_uncertainty_needs_differentiator() -> None:
+    doc = valid_candidate()
+    doc["novelty"]["private_duplicate_risk"] = "unknown"
+    doc["novelty"]["collision_differentiator"] = ""
+    assert_reject(doc, "collision_differentiator")
+
+
+def test_fixed_current_state_blocks_reporting() -> None:
+    doc = valid_candidate()
+    doc["novelty"]["current_state"]["result"] = "fixed"
+    assert_reject(doc, "current_state not fixed")
+
+
+def test_target_binding_catches_revision_drift() -> None:
+    doc = valid_candidate()
+    doc["target"]["commit"] = "different"
+    assert_reject(doc, "must match target ledger commit")
+
+
+def test_target_policy_must_accept_proof() -> None:
+    target = valid_target()
+    target["proof_policy"]["accepted_proof_types"] = ["regression-test"]
+    doc = valid_candidate()
+    doc["target_fingerprint"] = __import__("hunt_validation.target", fromlist=["target_fingerprint"]).target_fingerprint(target)
+    assert_reject(doc, "proof.type is not accepted", target=target)
+
+
+def test_target_severity_cap_blocks_overclaim() -> None:
+    target = valid_target()
+    target["scope"]["max_severity"] = "low"
+    doc = valid_candidate()
+    doc["target_fingerprint"] = __import__("hunt_validation.target", fromlist=["target_fingerprint"]).target_fingerprint(target)
+    assert_reject(doc, "exceeds target.scope.max_severity", target=target)
+
+
+def test_reportable_claim_matches_capability_delta() -> None:
+    doc = valid_candidate()
+    doc["claim"]["capability"] = "full database takeover"
+    assert_reject(doc, "must exactly match attacker_model.capability_after")
+
+
+def test_hold_can_stop_before_report_only_gates() -> None:
+    doc = valid_candidate()
+    doc["decision"] = {
+        "verdict": "HOLD",
+        "gate": "proof",
+        "failed_gates": [],
+        "missing_evidence": ["Need exact runtime reproduction."],
+        "reason": "Static trace is promising but proof is incomplete.",
+    }
+    doc["proof"]["level"] = "primitive"
+    errors = errors_for(doc, stage="decision")
+    assert not [error for error in errors if "REPORTABLE" in error], errors
+
+
+def main() -> int:
+    tests = [
+        test_reportable_candidate_accepts,
+        test_capability_delta_is_load_bearing,
+        test_terminal_refutation_cannot_be_rubber_stamped,
+        test_unresolved_refutation_blocks_reporting,
+        test_proof_must_reach_executable_boundary,
+        test_operator_weakened_config_blocks_reporting,
+        test_narrow_preserves_smaller_valid_claim,
+        test_recover_and_operator_required_block_reporting,
+        test_novelty_requires_issue_and_pr_channels,
+        test_private_collision_uncertainty_needs_differentiator,
+        test_fixed_current_state_blocks_reporting,
+        test_target_binding_catches_revision_drift,
+        test_target_policy_must_accept_proof,
+        test_target_severity_cap_blocks_overclaim,
+        test_reportable_claim_matches_capability_delta,
+        test_hold_can_stop_before_report_only_gates,
+    ]
+    failed = 0
+    for test in tests:
+        try:
+            test()
+        except AssertionError as exc:
+            failed += 1
+            print(f"[FAIL] {test.__name__}: {exc}")
+        else:
+            print(f"[PASS] {test.__name__}")
+    print(f"{len(tests) - failed}/{len(tests)} candidate groups passed")
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

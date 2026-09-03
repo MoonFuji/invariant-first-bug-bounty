@@ -1,201 +1,144 @@
-# Worked Examples
+# Worked examples
 
-These examples are synthetic and do not reproduce private or undisclosed report details. Section 7 calibrates caveat handling through generic gate logic rather than submitted cases.
+These examples are synthetic and calibrate gates. They are not real report
+provenance.
 
-## 1. Documented raw-builder contract — `KILL @ refutation`
+## 1. Cross-tenant direct-object read — REPORTABLE
 
-A query-builder exposes both a raw API and a parameterized API. A downstream application passes request input into the raw API and becomes injectable.
+**Invariant:** a tenant-scoped caller must not read another tenant's report.
 
-The library documents that the raw API accepts pre-sanitized fragments and delegates escaping to the caller. The downstream application is vulnerable, but the library did not violate a security property it owns.
+**Trace:** authenticated tenant A controls `/reports/{id}`; the direct lookup
+fetches by report id without tenant predicate; serialization returns tenant B's
+canary. The list sibling correctly scopes by tenant id.
 
-```jsonc
-"intent_corpus": {
-  "intentional_behaviors": [
-    {
-      "quote": "Raw fragments must be sanitized by the caller; use bind() for parameterization.",
-      "source": "README.md#raw-api"
-    }
-  ],
-  "finding_match": "intentional"
-},
-"threat_model": {
-  "strongest_refutation": {
-    "claim": "the raw API delegates escaping to the caller",
-    "kind": "behavior_is_documented_contract",
-    "evidence": "README.md#raw-api",
-    "resolution": "",
-    "resolution_source": "none",
-    "result": "confirmed"
+**Capability delta:** before, tenant A reads its own reports. After, tenant A
+reads a tenant B report.
+
+**Strongest refutation:** "report ids are intentionally globally readable."
+Target docs state reports are tenant-confidential, so the objection is
+non-terminal and refuted.
+
+**Proof:** exact pinned handler reproduces the cross-tenant canary and a
+tenant-scoped sibling acts as negative control.
+
+**Novelty:** commits, issues, PRs, disclosures, advisories and current branch are
+searched. Closest public issue concerns list filtering, not direct-object
+lookup.
+
+**Claim:** cross-tenant read only; no write/admin extension.
+
+**Decision:** `REPORTABLE`.
+
+## 2. Exact parser crash with unproven product ingress — NARROW
+
+A parser executable crashes on a crafted owned fixture.
+
+The stronger claim says a supported product-facing request reaches that exact
+parser representation and causes a service outage. The product ingress has not
+been demonstrated.
+
+Do not either:
+
+- inflate the report to a remote outage; or
+- kill the exact executable effect merely because the stronger chain failed.
+
+If the exact executable itself is in scope and security-relevant, use:
+
+```json
+{
+  "recovery": {
+    "status": "narrow",
+    "next_action": "Report only the exact executable effect.",
+    "required_artifact": "",
+    "unsupported_claims": [
+      "supported product ingress was not demonstrated",
+      "automatic restart or repeated outage was not demonstrated"
+    ]
   }
-},
-"decision": {
-  "verdict": "KILL",
-  "gate": "refutation",
-  "failed_gates": ["refutation"],
-  "missing_evidence": [],
-  "reason": "the downstream caller violated the documented raw-input contract"
 }
 ```
 
-Route the real bug to the downstream application. A misuse-resistance improvement in the library may be worthwhile, but it is not automatically a bounty vulnerability.
+The candidate claim and severity must stay inside the surviving effect.
 
-## 2. Cross-tenant object read — `REPORTABLE`
+## 3. Operator-disabled authorization — KILL/HOLD, not report
 
-The invariant is “tenant A reads only tenant A records.” A handler loads a record by global primary key without applying the authenticated tenant predicate.
+Source shows an endpoint without its normal authorization middleware only when
+an operator explicitly disables that middleware.
 
-Two owned tenants prove tenant A can retrieve tenant B’s canary. Anonymous and nonexistent-object controls behave as expected.
+If disabling the control already grants the capability being claimed,
+`proof.config_dependency.kind` is `operator_weakened`.
 
-The one-sentence attacker model has no load-bearing hedge:
+That does not establish a supported target boundary. Do not report the normal
+behavior as an auth bypass.
 
-> The attacker, who holds a normal tenant-A account, crosses the tenant boundary to read tenant-B data they could not read before.
+Use `KILL` when the supported contract is clear. Use `HOLD` if evidence about
+the shipped/supported configuration is still missing.
 
-```jsonc
-"threat_model": {
-  "capability_before": "tenant A reads tenant A records",
-  "capability_after": "tenant A reads tenant B records by id"
-},
-"proof": {
-  "type": "executable-local-exact-path",
-  "command": "./poc.sh",
-  "observed_result": "tenant-A token returned tenant-B canary",
-  "negative_controls": [
-    "anonymous request returned 401",
-    "nonexistent id returned 404"
-  ],
-  "config_dependency": {
-    "kind": "none",
-    "evidence": "the reproduced path uses the default configuration",
-    "precondition_grants_effect": false
-  }
-},
-"decision": {
-  "verdict": "REPORTABLE",
-  "gate": "reportability"
-}
+## 4. Git log clean, issue already covers root cause — duplicate
+
+A candidate finds a path canonicalization discrepancy. `git log` has no obvious
+fix, so a shallow search says "new."
+
+An upstream closed issue describes the same:
+
+```text
+boundary | primitive | invariant | effect
 ```
 
-Ordinary limitations can remain: the PoC may not enumerate all affected object types, and severity should reflect only the data proven readable. Those limitations do not negate the crossed tenant boundary.
+The payload differs, but the root cause and security effect do not.
 
-## 3. Substitute-client SSRF — `HOLD @ proof`
+`novelty.classification` is `duplicate`; the candidate does not become
+reportable. This is why repository novelty requires issue and PR searches in
+addition to commit history.
 
-A copied helper or compatible HTTP client follows an attacker-controlled URL, but the exact shipped binary and real product invocation were not exercised.
+## 5. Hosted proof vocabulary — valid mapping
 
-The primitive is plausible, yet executable and boundary fidelity remain unproven.
+The program policy says it accepts proof using a
+`program-hosted-owned-account`.
 
-```jsonc
-"decision": {
-  "verdict": "HOLD",
-  "gate": "proof",
-  "failed_gates": [],
-  "missing_evidence": [
-    "invoke the exact pinned binary through the real request/configuration path and capture the listener hit plus a blocked-URL control"
-  ]
-}
-```
+The candidate proof records the concrete technique as `live-two-identity`.
 
-“The product exposes a URL field” is a load-bearing caveat when the proof depends on a representation that may be normalized or rejected before reaching the executable.
+These are intentionally different vocabularies: one is the destination's
+accepted proof category, the other is the candidate's executed proof shape.
 
-## 4. Vulnerable dependency owned upstream — `ROUTE_ELSEWHERE`
+The final submission preflight records the policy category and the validator
+maps `live-two-identity → program-hosted-owned-account`. Raw string equality
+would reject a valid hosted proof.
 
-A product bundles an unmodified archive library with a traversal bug. The product proves reachability, but the faulty implementation and fix belong to the upstream project.
+## 6. Current severity cap changed during the hunt
 
-```jsonc
-"threat_model": {
-  "strongest_refutation": {
-    "claim": "the target does not own this security property",
-    "kind": "target_does_not_own_security_property",
-    "evidence": "the vulnerable extract() implementation is shipped verbatim from upstream",
-    "resolution": "",
-    "resolution_source": "none",
-    "result": "confirmed"
-  }
-},
-"route": {
-  "owning_project": "upstream/archive-lib",
-  "type": "upstream-advisory",
-  "owner_verified": true
-},
-"decision": {
-  "verdict": "ROUTE_ELSEWHERE",
-  "gate": "route"
-}
-```
+At target selection the asset allows `high`.
 
-## 5. Load-bearing versus ordinary caveats
+Five weeks later, the technical candidate is still valid, but the program now
+caps that asset at `low`.
 
-Use this test:
+The final preflight records the current `max_severity: low`. A candidate with a
+`high` severity ceiling cannot reach submission readiness until it is reassessed
+and bounded to the current cap.
 
-> The attacker, who already holds X, crosses boundary Y to gain capability Z they could not exercise before.
+The old target value does not win.
 
-Record every hedge this test surfaces in the candidate's `caveats` ledger — one `{quote, classification, justification}` entry per hedge, quoting your own draft wording. A `load_bearing` classification mechanically blocks `REPORTABLE`.
+## 7. One dead candidate is not a clean target
 
-### Fatal caveat: precondition already grants the effect
+H-001 traces a suspected cache-key confusion and dies because tenant identity is
+present in the authoritative key.
 
-> Exploitation requires the attacker to edit the victim service’s environment variables.
+Default mode simply records a `KILL` for H-001.
 
-When environment control already permits secret replacement, code execution, or equivalent authority, the alleged token leak may add no new capability. This lands at `capability_delta` unless a less-trusted actor can reach that setting through a target-owned path.
+If the user's request was "audit the whole repo," optional campaign mode
+continues to H-002/H-003 according to priority. There is no candidate-level
+`NO_REPORTABLE_FINDING` verdict that can accidentally certify the whole target.
 
-### Fatal caveat: deployment route not demonstrated
+An exhaustive target conclusion belongs to a closed exhaustive campaign.
 
-> The local default is vulnerable, but the report does not establish that the accepted production or source-code route uses this default.
+## 8. Final report changed after review
 
-This is `HOLD @ proof` when the destination requires that deployment relevance. It is not fatal when the program explicitly accepts the exact local shipped path as sufficient proof.
+A technically valid candidate is drafted into `report.md`. A reviewer approves
+the exact final bundle.
 
-### Fatal caveat: bypassed control is not a security boundary
+If the author edits the report, candidate, submission manifest, or any attachment
+afterward, the SHA-256 reference no longer matches and submission readiness
+fails.
 
-> The action still requires the same valid API credential; only a user-confirmation prompt is bypassed.
-
-If the credential-holder could already perform the operation directly, the prompt bypass may add no security capability. That is a `capability_delta` question, not an automatic finding.
-
-### Ordinary limitation: narrower affected surface
-
-> Only the report-read endpoint was tested; export and delete were not tested.
-
-The proven cross-tenant read remains reportable. This limitation constrains blast radius and severity and belongs in the report.
-
-### Ordinary limitation: no stronger chain demonstrated
-
-> The PoC reads a benign canary file but does not prove cloud credentials or code execution.
-
-The demonstrated file-read capability may still be reportable on the accepted boundary. Do not inflate it to stronger assets; keep the limitation and score the captured effect.
-
-## 6. Target rotation examples
-
-### Valid rotation at scope
-
-A live scope artifact marks the exact asset ineligible. The ledger records:
-
-```jsonc
-"decision": {
-  "disposition": "ROTATED",
-  "gate": "scope",
-  "rotation_basis": "scope_ineligible",
-  "reason": "the live scope response marks this exact asset ineligible"
-}
-```
-
-Downstream proof-policy and contestability fields may remain unassessed because scope already terminated selection.
-
-### Invalid rotation
-
-```jsonc
-"decision": {
-  "disposition": "ROTATED",
-  "reason": "the target looks hardened and the proof would take too long"
-}
-```
-
-This is not evidence. Use `HOLD` if a required live artifact is unavailable, or continue the selected target.
-
-## 7. Synthetic calibration — the caveat is the verdict
-
-These are synthetic gate examples. They do not come from a maintainer, researcher, program, or submitted report. Their purpose is to show when an apparently real defect still lacks a reportable security boundary or effect.
-
-| Synthetic case | Load-bearing caveat | Why it blocks reporting | Gate |
-|---|---|---|---|
-| A recovery API returns material to the same principal that already controls the signer | No separate principal or reachable cross-context sink is demonstrated | The PoC changes representation, not authority | Boundary / reachability |
-| A transport check can be disabled only by changing the victim process's trusted configuration | The assumed attacker can already rewrite security-sensitive configuration | The precondition subsumes the claimed credential impact | Precondition / capability delta |
-| A query is exposed only when a development default remains enabled | No supported or deployed configuration using that default is demonstrated | Local behavior alone does not establish the program's proof route or production impact | Deployment / proof route |
-| A warning or confirmation step can be skipped while using a valid privileged credential | Authentication and authorization still succeed exactly as designed | Removing a user-interface warning adds no new server-side capability | Control class / capability delta |
-
-The meta-rule: **a load-bearing hedge controls the gate; an ordinary limitation controls scope or severity.** Run the one-sentence attacker-model test, record every caveat in `caveats`, and classify it honestly. When only a stronger extension fails, use `NARROW` and keep the exact proven claim instead of discarding it.
+There is only one review layer: review the actual final bundle rather than
+certifying an intermediate candidate and later reviewing a second semantic copy.

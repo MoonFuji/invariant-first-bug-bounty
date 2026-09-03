@@ -1,442 +1,126 @@
 #!/usr/bin/env python3
-"""Regression tests for target-bound validation and closure review."""
+"""Integration-level validation regressions for the simplified workflow."""
 from __future__ import annotations
 
 import copy
-import json
-import subprocess
-import sys
-import tempfile
-from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE))
-import validate_hunt as vh  # noqa: E402
-
-NOW = datetime.now(UTC).replace(microsecond=0)
+from hunt_validation.candidate import validate_candidate
+from hunt_validation.target import target_fingerprint, validate_campaign, validate_target
+from test_fixtures import valid_campaign, valid_candidate, valid_target
 
 
-def stamp(*, minutes_ago: int = 0, days_ago: int = 0) -> str:
-    return (NOW - timedelta(days=days_ago, minutes=minutes_ago)).isoformat().replace("+00:00", "Z")
-
-
-def evidence(name: str) -> dict[str, str]:
-    return {"method": "connector", "source": f"live:{name}", "artifact": f"artifacts/{name}.json"}
-
-
-def target() -> dict:
-    return {
-        "schema_version": 3,
-        "target_id": "h1-example-server-8f9e6bb",
-        "platform": "hackerone",
-        "route_type": "bounty",
-        "asset_type": "repository",
-        "program": "example",
-        "asset": "Example Server",
-        "repository": "github.com/example/server",
-        "commit": "8f9e6bb",
-        "operating_mode": "SOURCE_ONLY",
-        "scope": {
-            "status": "eligible", "asset_identifier": "Example Server", "max_severity": "critical",
-            "checked_at": stamp(minutes_ago=10), "reason": "", "evidence": evidence("scope"),
-        },
-        "proof_policy": {
-            "status": "checked", "accepted_proof_types": ["executable-local-exact-path", "regression-test"],
-            "supporting_evidence_types": ["static-source-trace"],
-            "quote": "Our code is open so use that to your advantage!",
-            "checked_at": stamp(minutes_ago=9), "reason": "", "evidence": evidence("policy"),
-        },
-        "contestability": {
-            "status": "checked", "basis": "platform_count", "count": 6, "discloses_reports": True,
-            "checked_at": stamp(minutes_ago=8), "reason": "", "evidence": evidence("contestability"),
-            "rationale": "Six asset-level resolved reports and a searchable disclosure feed.",
-        },
-        "prior_outcomes": {
-            "status": "assessed", "summary": "No prior local outcomes for this exact target.",
-            "outcomes": [], "checked_at": stamp(minutes_ago=8), "evidence": evidence("prior-outcomes"),
-        },
-        "coverage_delta": {
-            "status": "assessed", "previously_audited": [], "new_or_uncovered": ["request boundary"],
-            "changed_since_last_review": [], "checked_at": stamp(minutes_ago=8),
-            "evidence": evidence("coverage"),
-        },
-        "architecture_boundary_map": {"boundaries": [{
-            "boundary_id": "B-001", "name": "request to tenant data",
-            "entrypoints": ["GET /records/{id}"], "trust_transition": "caller to tenant record",
-            "evidence": evidence("boundary"),
-        }]},
-        "hypothesis_lifecycle": [{
-            "hypothesis_id": "H-001", "boundary_id": "B-001",
-            "statement": "record lookup may omit tenant authorization",
-            "priority": "high", "status": "investigating",
-        }],
-        "campaign": {
-            "campaign_id": "C-001", "mode": "bounded", "status": "open",
-            "stop_condition": "Close the mapped request-boundary hypothesis.",
-        },
-        "decision": {
-            "disposition": "SELECTED", "gate": "selection", "rotation_basis": None,
-            "alternative_target": "", "missing_evidence": [], "evidence": evidence("selection"),
-            "reason": "Eligible with compatible proof route and acceptable asset-level contestability.",
-            "decided_at": stamp(minutes_ago=7),
-        },
+def test_target_hold_is_explicit_missing_evidence_not_campaign_state() -> None:
+    target = valid_target()
+    target["scope"]["status"] = "unknown"
+    target["scope"]["max_severity"] = ""
+    target["scope"]["reason"] = "Scope connector unavailable."
+    target["decision"] = {
+        "disposition": "HOLD",
+        "gate": "scope",
+        "rotation_basis": None,
+        "alternative_target": "",
+        "missing_evidence": ["Current scope eligibility."],
+        "reason": "Cannot select until live scope is known.",
+        "evidence": {"method": "", "source": "", "artifact": ""},
     }
+    errors: list[str] = []
+    validate_target(target, errors)
+    assert not errors, errors
 
 
-def candidate_binding(t: dict) -> dict:
-    return {
-        "schema_version": 6,
-        "candidate_id": "candidate-001",
-        "campaign_id": t["campaign"]["campaign_id"],
-        "target_fingerprint": vh.target_fingerprint(t),
-        "boundary_id": "B-001",
-        "hypothesis_id": "H-001",
-        "target_ledger_id": t["target_id"],
-        "target": {
-            "platform": t["platform"], "route_type": t["route_type"], "asset_type": t["asset_type"],
-            "program": t["program"], "asset": t["asset"], "repository": t["repository"],
-            "commit": t["commit"], "operating_mode": t["operating_mode"],
-            "scope_checked_at": t["scope"]["checked_at"],
-            "scope_evidence": "live:scope (artifacts/scope.json)",
-            "contestability": {"discloses_reports": t["contestability"]["discloses_reports"]},
-        },
+def test_proof_route_rotation_must_be_evidence_backed() -> None:
+    target = valid_target()
+    target["proof_policy"] = {
+        "status": "unavailable",
+        "accepted_proof_types": [],
+        "quote": "",
+        "checked_at": target["scope"]["checked_at"],
+        "reason": "Program policy page is unavailable.",
+        "evidence": {"method": "connector", "source": "live:policy", "artifact": "policy-failure.json"},
     }
-
-
-def review_document(verdict: str = "NO_REPORTABLE_FINDING") -> dict:
-    return {
-        "decision": {"verdict": verdict, "decided_at": "2026-08-20T04:05:00Z"},
-        "adversarial_review": {
-            "reviewer": {
-                "mode": "independent_agent", "id": "reviewer-1",
-                "reviewed_at": "2026-08-20T04:00:00Z", "artifact": "reviews/H-1.json",
-                "fresh_context": True,
-            },
-            "cold_verify": {
-                "verdict": "DISPROVED", "rederived_severity": "n/a: load-bearing link failed",
-                "killed_subclaim": "tenant predicate blocks the requested row",
-                "subclaims": [
-                    {"claim": "attacker controls id", "status": "supported", "evidence": "routes.py:14"},
-                    {"claim": "id bypasses tenant scope", "status": "unsupported", "evidence": "controller.py:22"},
-                ],
-            },
-        },
-        "closure_review": {
-            "verdict": "DEPTH_SUFFICIENT",
-            "closures_challenged": [{
-                "hypothesis": "H-1", "closure": "KILL @ reachability",
-                "challenge": "re-derived public ingress and tenant lookup",
-                "evidence": "reviews/H-1.json#reachability",
-            }],
-            "probe_assessment": {"sufficient": True, "waived": False, "waiver_reason": "", "evidence": "artifacts/probe.txt"},
-            "coverage_gaps": [], "remaining_high_value_hypotheses": ["H-2 remains queued"],
-        },
-        "exhaustion": {"probes": [{
-            "hypothesis": "cross-tenant read", "command": "./probe.sh",
-            "would_fire_if_vulnerable": "tenant-B canary returned", "observed": "404",
-            "result": "negative", "origin": "researcher_adversarial",
-        }]},
+    target["decision"] = {
+        "disposition": "ROTATED",
+        "gate": "proof_policy",
+        "rotation_basis": "proof_route_unavailable",
+        "alternative_target": "",
+        "missing_evidence": [],
+        "reason": "No accepted proof route can currently be established.",
+        "evidence": copy.deepcopy(target["proof_policy"]["evidence"]),
     }
-
-
-def errors_for_target(doc: dict) -> list[str]:
     errors: list[str] = []
-    vh.validate_target(doc, errors)
-    return errors
+    validate_target(target, errors)
+    assert not errors, errors
+
+    target["decision"]["evidence"]["artifact"] = "invented.json"
+    errors = []
+    validate_target(target, errors)
+    assert any("must match proof_policy.evidence" in error for error in errors), errors
 
 
-def assert_reject(doc: dict, message: str) -> None:
-    errors = errors_for_target(doc)
-    assert any(message in error for error in errors), errors
-
-
-def test_target_decisions() -> None:
-    assert not errors_for_target(target())
-
-    doc = target()
-    doc["scope"]["status"] = "ineligible"
-    assert_reject(doc, "may be SELECTED only")
-
-    doc = target()
-    doc["proof_policy"]["accepted_proof_types"] = ["program-hosted-owned-account"]
-    assert_reject(doc, "compatible with operating_mode")
-
-    doc = target()
-    doc["decision"].update({"disposition": "ROTATED", "gate": "selection", "rotation_basis": None})
-    assert_reject(doc, "structured decision.rotation_basis")
-
-    doc = target()
-    doc["scope"]["status"] = "ineligible"
-    doc["decision"].update({
-        "disposition": "ROTATED", "gate": "scope", "rotation_basis": "scope_ineligible",
-        "reason": "Live scope excludes the asset.", "evidence": copy.deepcopy(doc["scope"]["evidence"]),
-    })
-    assert not errors_for_target(doc)
-
-    doc = target()
-    doc["decision"].update({
-        "disposition": "HOLD", "gate": "proof_policy", "rotation_basis": None,
-        "missing_evidence": ["Policy fetch failed; retry live retrieval."],
-    })
-    assert not errors_for_target(doc)
-
-
-def test_live_evidence_and_asset_types() -> None:
-    doc = target()
-    doc["scope"]["checked_at"] = "yesterday"
-    assert_reject(doc, "ISO-8601")
-
-    doc = target()
-    doc["contestability"]["count"] = -1
-    assert_reject(doc, "non-negative integer")
-
-    doc = target()
-    doc.update({"asset_type": "api", "asset": "api.example.test", "repository": None, "commit": None,
-                "operating_mode": "PROGRAM_HOSTED"})
-    doc["proof_policy"]["accepted_proof_types"] = ["program-hosted-owned-account"]
-    assert not errors_for_target(doc)
-
-    doc = target()
-    doc.update({"platform": "upstream", "route_type": "upstream-advisory", "asset_type": "library",
-                "program": "upstream-org/archive-lib", "asset": "archive-lib"})
-    doc["scope"].update({"status": "not_applicable", "reason": "Coordinated upstream disclosure."})
-    doc["proof_policy"]["accepted_proof_types"] = ["maintainer-fix-or-cve"]
-    assert not errors_for_target(doc)
-
-
-def test_candidate_binding_and_contract() -> None:
-    t = target()
-    c = candidate_binding(t)
+def test_candidate_does_not_require_campaign() -> None:
+    target = valid_target()
+    candidate = valid_candidate()
     errors: list[str] = []
-    vh.validate_candidate_target_binding(c, t, errors)
+    validate_candidate(candidate, target, "report", errors, campaign=None)
     assert not errors, errors
 
-    drifted = copy.deepcopy(c)
-    drifted["target"]["asset"] = "Other asset"
-    errors = []
-    vh.validate_candidate_target_binding(drifted, t, errors)
-    assert any("candidate.target.asset" in error for error in errors), errors
 
-    rotated = target()
-    rotated["scope"]["status"] = "ineligible"
-    rotated["decision"].update({
-        "disposition": "ROTATED", "gate": "scope", "rotation_basis": "scope_ineligible",
-        "reason": "Excluded", "evidence": copy.deepcopy(rotated["scope"]["evidence"]),
-    })
-    errors = []
-    vh.validate_candidate_target_binding(c, rotated, errors)
-    assert any("SELECTED" in error for error in errors), errors
-
-    report = copy.deepcopy(c)
-    report["proof"] = {"type": "live-two-identity"}
-    report["route"] = {"type": "program"}
-    errors = []
-    vh.validate_report_target_contract(report, t, errors)
-    assert any("proof.type" in error for error in errors), errors
-
-    private = target()
-    private["contestability"].update({
-        "basis": "private_unavailable", "count": None, "discloses_reports": False,
-        "reason": "The private report pool is not visible to researchers.",
-    })
-    report = candidate_binding(private)
-    report["proof"] = {"type": "executable-local-exact-path"}
-    report["route"] = {"type": "program"}
-    report["novelty"] = {"private_duplicate_risk": "low", "collision_differentiator": ""}
-    errors = []
-    vh.validate_report_target_contract(report, private, errors)
-    assert any("cannot support low" in error for error in errors), errors
-
-    report["novelty"]["private_duplicate_risk"] = "medium"
-    errors = []
-    vh.validate_report_target_contract(report, private, errors)
-    assert any("collision_differentiator" in error for error in errors), errors
-
-    unknown_visibility = target()
-    unknown_visibility["contestability"].update({
-        "basis": "public_history", "count": None, "discloses_reports": None,
-    })
-    report = candidate_binding(unknown_visibility)
-    report.update({
-        "proof": {"type": "executable-local-exact-path"}, "route": {"type": "program"},
-        "novelty": {"private_duplicate_risk": "low", "collision_differentiator": ""},
-    })
-    errors = []
-    vh.validate_report_target_contract(report, unknown_visibility, errors)
-    assert any("cannot support low" in error for error in errors), errors
-
-    weak_claim = {
-        "proof": {"supporting_evidence_types": []},
-        "claim_scope": {
-            "highest_proven_rung": "none", "demonstrated_capability": "",
-            "demonstrated_impact": "", "severity_ceiling": "", "unsupported_extensions": [],
-        },
-        "recovery": {"classification": "NONE"},
-        "decision": {"verdict": "REPORTABLE"},
-    }
-    errors = []
-    vh.validate_claim_scope_and_recovery(weak_claim, errors)
-    assert any("exact_executable" in error for error in errors), errors
-    assert any("demonstrated_capability" in error for error in errors), errors
-
-    capped_target = target()
-    capped_target["scope"]["max_severity"] = "low"
-    over_ceiling = candidate_binding(capped_target)
-    over_ceiling.update({
-        "proof": {"type": "executable-local-exact-path"},
-        "route": {"type": "program"},
-        "claim_scope": {"severity_ceiling": "critical"},
-        "novelty": {"private_duplicate_risk": "medium", "collision_differentiator": "different invariant"},
-    })
-    errors = []
-    vh.validate_report_target_contract(over_ceiling, capped_target, errors)
-    assert any("exceeds target.scope.max_severity" in error for error in errors), errors
-
-
-def test_closure_review() -> None:
-    doc = review_document()
+def test_campaign_binding_is_optional_but_strict_when_supplied() -> None:
+    target = valid_target()
+    campaign = valid_campaign()
+    candidate = valid_candidate(campaign=True)
     errors: list[str] = []
-    vh.validate_closure_review(doc, errors, provisional=False)
+    validate_campaign(campaign, errors)
+    validate_candidate(candidate, target, "report", errors, campaign=campaign)
     assert not errors, errors
 
-    bad = review_document()
-    bad["adversarial_review"]["cold_verify"]["verdict"] = "UNCERTAIN"
+    campaign["hypotheses"][0]["status"] = "queued"
     errors = []
-    vh.validate_closure_review(bad, errors, provisional=False)
-    assert any("DISPROVED" in error for error in errors), errors
-
-    bad = review_document()
-    bad["closure_review"]["closures_challenged"] = []
-    errors = []
-    vh.validate_closure_review(bad, errors, provisional=False)
-    assert any("closures_challenged" in error for error in errors), errors
-
-def test_probe_warning() -> None:
-    doc = review_document()
-    warnings: list[str] = []
-    vh.validate_probe_shapes(doc, warnings)
-    assert not warnings, warnings
-    doc["exhaustion"]["probes"] = [{"command": "echo hello"}]
-    warnings = []
-    vh.validate_probe_shapes(doc, warnings)
-    assert warnings
+    validate_campaign(campaign, errors)
+    validate_candidate(candidate, target, "report", errors, campaign=campaign)
+    assert any("investigating or closed" in error for error in errors), errors
 
 
-def test_closure_coverage_warning() -> None:
-    doc = review_document()
+def test_closed_hypothesis_can_bind_exact_terminal_candidate_without_hash_bookkeeping() -> None:
+    target = valid_target()
+    campaign = valid_campaign()
+    campaign["hypotheses"][0].update({
+        "status": "closed",
+        "candidate_id": "C-001",
+        "verdict": "REPORTABLE",
+        "reason": "Exact cross-tenant read was demonstrated.",
+    })
+    candidate = valid_candidate(campaign=True)
     errors: list[str] = []
-    warnings: list[str] = []
-    vh.validate_closure_review(doc, errors, provisional=False, warnings=warnings)
+    validate_campaign(campaign, errors)
+    validate_candidate(candidate, target, "report", errors, campaign=campaign)
     assert not errors, errors
-    assert not warnings, warnings
-
-    doc["closure_review"]["coverage_gaps"] = []
-    doc["closure_review"]["remaining_high_value_hypotheses"] = []
-    warnings = []
-    vh.validate_closure_review(doc, errors, provisional=False, warnings=warnings)
-    assert not errors, errors
-    assert any("no coverage gaps" in warning for warning in warnings), warnings
-
-    provisional_doc = review_document()
-    provisional_doc["closure_review"]["verdict"] = "UNREVIEWED"
-    warnings = []
-    vh.validate_closure_review(provisional_doc, [], provisional=True, warnings=warnings)
-    assert not warnings, warnings
+    assert "candidate_sha256" not in campaign["hypotheses"][0]
+    assert "closed_at" not in campaign["hypotheses"][0]
 
 
-def test_caveat_ledger() -> None:
-    doc: dict = {"decision": {"verdict": "REPORTABLE"}}
-    errors: list[str] = []
-    vh.validate_caveat_ledger(doc, errors)
-    assert any("caveats[]" in error for error in errors), errors
+def test_target_refresh_preserves_candidate_only_when_identity_is_stable() -> None:
+    target = valid_target()
+    candidate = valid_candidate()
+    refreshed = copy.deepcopy(target)
+    refreshed["scope"]["checked_at"] = target["proof_policy"]["checked_at"]
+    refreshed["scope"]["evidence"]["artifact"] = "new-scope.json"
+    # Mutable evidence refresh does not change target fingerprint.
+    assert target_fingerprint(refreshed) == candidate["target_fingerprint"]
 
-    doc["caveats"] = "none"
-    errors = []
-    vh.validate_caveat_ledger(doc, errors)
-    assert any("caveats[]" in error for error in errors), errors
-
-    doc["caveats"] = []
-    errors = []
-    vh.validate_caveat_ledger(doc, errors)
-    assert not errors, errors
-
-    doc["caveats"] = [{"quote": "only one endpoint tested", "classification": "ordinary", "justification": "constrains severity, not the boundary"}]
-    errors = []
-    vh.validate_caveat_ledger(doc, errors)
-    assert not errors, errors
-
-    doc["caveats"] = [{"quote": "does not prove production exposure", "classification": "load_bearing", "justification": ""}]
-    errors = []
-    vh.validate_caveat_ledger(doc, errors)
-    assert any("load-bearing caveat forbids REPORTABLE" in error for error in errors), errors
-    assert any("justification" in error for error in errors), errors
-
-    doc["caveats"] = [{"quote": "", "classification": "fatal", "justification": ""}]
-    errors = []
-    vh.validate_caveat_ledger(doc, errors)
-    assert len(errors) >= 3, errors
-
-    killed = {"decision": {"verdict": "KILL"}, "caveats": [{"quote": "q", "classification": "load_bearing", "justification": "j"}]}
-    errors = []
-    vh.validate_caveat_ledger(killed, errors)
-    assert not errors, errors
-
-
-def test_target_cli_labels() -> None:
-    with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / "target.json"
-        for disposition, expected in (("SELECTED", "TARGET SELECTED"), ("HOLD", "TARGET HOLD")):
-            doc = target()
-            if disposition == "HOLD":
-                doc["decision"].update({
-                    "disposition": "HOLD", "gate": "proof_policy", "rotation_basis": None,
-                    "missing_evidence": ["Retry policy pull."],
-                })
-            path.write_text(json.dumps(doc), encoding="utf-8")
-            proc = subprocess.run(
-                [sys.executable, str(HERE / "validate_hunt.py"), "--stage", "target", str(path)],
-                capture_output=True, text=True,
-            )
-            assert proc.returncode == 0, proc.stderr
-            assert expected in proc.stdout, proc.stdout
-
-
-def test_start_candidate() -> None:
-    with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp)
-        target_path = root / "target.json"
-        candidate_path = root / "candidate.json"
-        target_path.write_text(json.dumps(target()), encoding="utf-8")
-        proc = subprocess.run(
-            [
-                sys.executable, str(HERE / "start_candidate.py"),
-                "--target-ledger", str(target_path),
-                "--template", str(HERE.parent / "assets" / "candidate.template.json"),
-                "--output", str(candidate_path),
-            ],
-            capture_output=True, text=True,
-        )
-        assert proc.returncode == 0, proc.stderr
-        candidate = json.loads(candidate_path.read_text(encoding="utf-8"))
-        assert candidate["target_ledger_id"] == target()["target_id"]
-        assert candidate["target"]["asset"] == "Example Server"
-        errors: list[str] = []
-        vh.validate_candidate_target_binding(candidate, target(), errors)
-        assert not errors, errors
+    changed = copy.deepcopy(target)
+    changed["commit"] = "new-revision"
+    assert target_fingerprint(changed) != candidate["target_fingerprint"]
 
 
 def main() -> int:
     tests = [
-        test_target_decisions,
-        test_live_evidence_and_asset_types,
-        test_candidate_binding_and_contract,
-        test_closure_review,
-        test_probe_warning,
-        test_closure_coverage_warning,
-        test_caveat_ledger,
-        test_target_cli_labels,
-        test_start_candidate,
+        test_target_hold_is_explicit_missing_evidence_not_campaign_state,
+        test_proof_route_rotation_must_be_evidence_backed,
+        test_candidate_does_not_require_campaign,
+        test_campaign_binding_is_optional_but_strict_when_supplied,
+        test_closed_hypothesis_can_bind_exact_terminal_candidate_without_hash_bookkeeping,
+        test_target_refresh_preserves_candidate_only_when_identity_is_stable,
     ]
     failed = 0
     for test in tests:
@@ -447,7 +131,7 @@ def main() -> int:
             print(f"[FAIL] {test.__name__}: {exc}")
         else:
             print(f"[PASS] {test.__name__}")
-    print(f"\n{len(tests) - failed}/{len(tests)} test groups passed")
+    print(f"{len(tests) - failed}/{len(tests)} hunt integration groups passed")
     return 1 if failed else 0
 
 
