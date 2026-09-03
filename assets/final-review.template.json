@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "review_type": "final_submission",
+  "reviewer": {
+    "mode": "independent_agent",
+    "id": "",
+    "reviewed_at": "",
+    "fresh_context": true
+  },
+  "verdict": "NOT_READY",
+  "submission": {"path": "submission.json", "sha256": ""},
+  "candidate": {"path": "candidate.json", "sha256": ""},
+  "report": {"path": "report.md", "sha256": ""},
+  "attachments": []
+}

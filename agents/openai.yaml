@@ -1,5 +1,8 @@
 interface:
   display_name: "Invariant-First Bug Bounty"
-  short_description: "Target-bound, evidence-gated bug-bounty research"
+  short_description: "Invariant-first, evidence-gated vulnerability research"
   default_prompt: >-
-    Use $invariant-first-bug-bounty to run an authorized, campaign-based security review, advance bounded proven findings without overclaiming, and prepare an exact digest-reviewed report bundle for my final submission check.
+    Use $invariant-first-bug-bounty to investigate one authorized security
+    invariant completely, prove and bound any real capability, use campaign
+    tracking only when broad coverage is requested, and prepare one exact
+    final-reviewed report bundle for my submission check.

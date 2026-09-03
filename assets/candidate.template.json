@@ -1,135 +1,48 @@
 {
-  "schema_version": 6,
+  "schema_version": 7,
   "candidate_id": "",
-  "campaign_id": "",
-  "target_fingerprint": "",
-  "boundary_id": "",
-  "hypothesis_id": "",
   "target_ledger_id": "",
-  "decision_history": [],
-  "intent_corpus": {
-    "checked_at": "",
-    "sources": [],
-    "intentional_behaviors": [],
-    "acknowledged_risks": [],
-    "finding_match": "none"
-  },
-  "caveats": [],
-  "adversarial_review": {
-    "reviewer": {
-      "mode": "self",
-      "id": "",
-      "reviewed_at": "",
-      "artifact": "",
-      "fresh_context": false
-    },
-    "advocate": {
-      "layers_checked": [],
-      "fp_pattern_hits": [],
-      "strongest_defense": "",
-      "blocks": false
-    },
-    "cold_verify": {
-      "verdict": "UNCERTAIN",
-      "rederived_severity": "",
-      "killed_subclaim": null,
-      "subclaims": []
-    },
-    "causal": []
-  },
-  "closure_review": {
-    "verdict": "UNREVIEWED",
-    "closures_challenged": [],
-    "probe_assessment": {
-      "sufficient": false,
-      "waived": false,
-      "waiver_reason": "",
-      "evidence": ""
-    },
-    "coverage_gaps": [],
-    "remaining_high_value_hypotheses": []
-  },
-  "exhaustion": {
-    "tried": [],
-    "untried_closed": [],
-    "probes": [],
-    "depth_contract": {
-      "entrypoint": "",
-      "invariant_enforcement": "",
-      "trace": "",
-      "sibling_checked": "",
-      "defeated_counterexample": ""
-    }
-  },
-  "hardening": {
-    "status": "none",
-    "reviewer": "self",
-    "widened_radius": "",
-    "severity_reassessment": "",
-    "deepened_poc": "",
-    "completed_at": ""
-  },
-  "variant_sweep": {
-    "flow_shape": "",
-    "grep_artifact": "",
-    "siblings_checked": [],
-    "alternate_transports_checked": [],
-    "variants_found": []
-  },
+  "target_fingerprint": "",
+  "campaign_id": null,
+  "hypothesis_id": null,
   "target": {
     "platform": "",
     "route_type": "",
     "asset_type": "",
-    "operating_mode": "SOURCE_ONLY",
     "program": "",
     "asset": "",
     "repository": "",
     "commit": "",
-    "scope_evidence": "",
-    "scope_checked_at": ""
+    "operating_mode": "SOURCE_ONLY"
   },
-  "model": {
-    "principals": [],
-    "protected_assets": [],
-    "trust_boundaries": [],
-    "state_stores": [],
-    "security_invariant": "",
-    "enforcement_points": []
+  "invariant": "",
+  "attacker_model": {
+    "starting_access": "",
+    "controls": "",
+    "boundary": "",
+    "capability_before": "",
+    "capability_after": ""
   },
   "trace": {
     "entrypoint": "",
-    "attacker_input": "",
-    "validation_path": "",
-    "authorization_path": "",
-    "state_transition": "",
-    "persistence_path": "",
-    "observable_effect": "",
-    "sibling_paths": []
+    "security_check": "",
+    "effect": "",
+    "sibling_checked": ""
   },
-  "threat_model": {
-    "attacker_starting_access": "",
-    "attacker_controls": "",
-    "victim_action": "",
-    "capability_before": "",
-    "capability_after": "",
-    "asset_owned_boundary": "",
-    "strongest_refutation": {
-      "claim": "",
-      "kind": "non_terminal",
-      "evidence": "",
-      "resolution": "",
-      "resolution_source": "none",
-      "result": "unresolved"
-    }
+  "strongest_refutation": {
+    "claim": "",
+    "kind": "non_terminal",
+    "result": "unresolved",
+    "evidence": ""
   },
   "proof": {
+    "level": "primitive",
     "type": "none",
-    "artifact": "",
     "command": "",
+    "artifact": "",
     "observed_result": "",
-    "negative_controls": [],
+    "negative_control": "",
     "production_relevance": "",
-    "supporting_evidence_types": [],
     "config_dependency": {
       "kind": "unknown",
       "evidence": "",
@@ -137,148 +50,94 @@
     }
   },
   "route": {
-    "owning_project": "",
+    "type": "program",
+    "owner": "",
+    "destination": "",
+    "verified": false,
     "owner_evidence": "",
-    "submission_target": "",
-    "type": "none",
-    "owner_verified": false,
     "proof_type_accepted": false,
-    "proof_acceptance_evidence": "",
-    "scope_verified": false
+    "proof_acceptance_evidence": ""
   },
   "novelty": {
     "root_cause_fingerprint": "",
-    "checks": [
+    "classification": "uncertain",
+    "semantic_delta": "",
+    "closest_match": null,
+    "private_duplicate_risk": "unknown",
+    "collision_differentiator": "",
+    "searches": [
       {
         "source": "own_reports",
         "query": "",
-        "checked_at": "",
         "result": "unavailable",
         "reason": "",
-        "closest_match": null,
-        "evidence": {
-          "method": "",
-          "query": "",
-          "artifact": ""
-        }
+        "evidence": {"method": "", "query": "", "artifact": ""}
       },
       {
         "source": "program_disclosures",
         "query": "",
-        "checked_at": "",
         "result": "unavailable",
         "reason": "",
-        "closest_match": null,
-        "evidence": {
-          "method": "",
-          "query": "",
-          "artifact": ""
-        }
+        "evidence": {"method": "", "query": "", "artifact": ""}
       },
       {
-        "source": "upstream_history",
+        "source": "upstream_commits",
         "query": "",
-        "checked_at": "",
         "result": "unavailable",
         "reason": "",
-        "closest_match": null,
-        "evidence": {
-          "method": "",
-          "query": "",
-          "artifact": ""
-        },
-        "channels": [
-          {
-            "channel": "commits",
-            "query": "",
-            "result": "unavailable",
-            "reason": "",
-            "closest_match": null,
-            "evidence": {
-              "method": "git_log",
-              "query": "",
-              "artifact": ""
-            }
-          },
-          {
-            "channel": "issues",
-            "query": "",
-            "result": "unavailable",
-            "reason": "",
-            "closest_match": null,
-            "evidence": {
-              "method": "github_issue_search",
-              "query": "",
-              "artifact": ""
-            }
-          },
-          {
-            "channel": "pull_requests",
-            "query": "",
-            "result": "unavailable",
-            "reason": "",
-            "closest_match": null,
-            "evidence": {
-              "method": "github_pr_search",
-              "query": "",
-              "artifact": ""
-            }
-          }
-        ]
+        "evidence": {"method": "git_log", "query": "", "artifact": ""}
+      },
+      {
+        "source": "upstream_issues",
+        "query": "",
+        "result": "unavailable",
+        "reason": "",
+        "evidence": {"method": "github_issue_search", "query": "", "artifact": ""}
+      },
+      {
+        "source": "upstream_pull_requests",
+        "query": "",
+        "result": "unavailable",
+        "reason": "",
+        "evidence": {"method": "github_pr_search", "query": "", "artifact": ""}
       },
       {
         "source": "recent_advisories",
         "query": "",
-        "checked_at": "",
         "result": "unavailable",
         "reason": "",
-        "closest_match": null,
-        "evidence": {
-          "method": "",
-          "query": "",
-          "artifact": ""
-        }
+        "evidence": {"method": "", "query": "", "artifact": ""}
       }
     ],
-    "closest_known_match": null,
-    "semantic_delta": "",
-    "classification": "uncertain",
-    "private_duplicate_risk": "unknown",
-    "collision_differentiator": "",
-    "current_upstream_state": {
+    "current_state": {
       "ref": "",
-      "checked_at": "",
-      "path": "",
       "result": "unavailable",
-      "evidence": {
-        "method": "",
-        "query": "",
-        "artifact": ""
-      }
+      "reason": "",
+      "evidence": {"method": "", "query": "", "artifact": ""}
     }
   },
-  "claim_scope": {
-    "highest_proven_rung": "none",
-    "demonstrated_capability": "",
-    "demonstrated_impact": "",
-    "unsupported_extensions": [],
-    "severity_ceiling": ""
+  "claim": {
+    "capability": "",
+    "impact": "",
+    "severity_ceiling": "",
+    "limitations": []
   },
   "recovery": {
-    "classification": "RECOVER",
-    "failed_rung": "primitive",
-    "next_action": "Complete the first safe evidence task.",
+    "status": "recover",
+    "next_action": "Collect the next claim-critical artifact.",
     "required_artifact": "",
-    "surviving_claim": ""
+    "unsupported_claims": []
+  },
+  "hardening": {
+    "scope_checked": "",
+    "severity_reassessed": "",
+    "proof_strengthened": ""
   },
   "decision": {
     "verdict": "HOLD",
-    "gate": "scope",
+    "gate": "model",
     "failed_gates": [],
-    "missing_evidence": [
-      "Complete target verification."
-    ],
-    "reason": "Candidate is not yet validated.",
-    "decided_at": ""
+    "missing_evidence": ["Complete the current gate."],
+    "reason": "Candidate is not ready."
   }
 }

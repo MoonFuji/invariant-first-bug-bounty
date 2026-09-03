@@ -1,54 +1,27 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "submission_id": "",
-  "campaign_id": "",
   "candidate_id": "",
-  "asset": "",
-  "version": "",
-  "title": "",
-  "weakness": "",
-  "severity": "",
-  "cvss": {
-    "score": null,
-    "vector": ""
+  "target_id": "",
+  "files": {
+    "candidate": {"path": "candidate.json", "sha256": ""},
+    "report": {"path": "report.md", "sha256": ""},
+    "attachments": []
   },
-  "demonstrated": {
-    "capability": "",
-    "impact": ""
-  },
-  "reproduction": {
-    "commands": []
-  },
-  "report": {
-    "path": "report.md",
-    "sha256": ""
-  },
-  "attachments": [],
   "preflight": {
     "scope": {
       "status": "unassessed",
       "asset_identifier": "",
+      "max_severity": "",
       "checked_at": "",
-      "evidence": {
-        "method": "",
-        "source": "",
-        "artifact": ""
-      }
+      "evidence": {"method": "", "source": "", "artifact": ""}
     },
     "proof_policy": {
       "status": "unassessed",
-      "accepted_proof_type": "",
+      "accepted_proof_types": [],
       "checked_at": "",
-      "evidence": {
-        "method": "",
-        "source": "",
-        "artifact": ""
-      }
+      "evidence": {"method": "", "source": "", "artifact": ""}
     }
-  },
-  "candidate_artifact": {
-    "path": "",
-    "sha256": ""
   },
   "prepared_at": ""
 }
